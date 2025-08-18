@@ -1,0 +1,18 @@
+file,purpose
+users_agents.csv,Agent directory for skills-based routing and availability.
+assignment_groups.csv,Queues/teams incidents are routed to.
+agent_group_membership.csv,Which agents belong to which groups (and weighting).
+skills_catalog.csv,Canonical skills used by triage and matching (UC-02/31).
+agent_skills.csv,"Agent proficiency per skill (levels, certification)."
+services_catalog.csv,Business/IT services referenced by incidents and KB.
+category_tree.csv,Category/subcategory labels for routing and clustering (UC-02/21).
+cmdb_ci.csv,Minimal CI list linked to services for context/routing.
+priority_matrix.csv,Impact×Urgency → Priority mapping used by triage (UC-02).
+incidents_resolved.csv,Historical resolved tickets with ground-truth clusters (UC-02/21).
+kb_templates.csv,Title/body scaffolds the AI uses to draft KBs (UC-21).
+kb_articles.csv,Empty target repo for AI-drafted KB articles (UC-21).
+workload_queue.csv,Live items awaiting assignment (UC-31).
+agent_capacity_snapshots.csv,Current load for capacity-aware assignment (UC-31).
+agent_performance_history.csv,Quality scores (AHT/FCR/CSAT) to weight matching (UC-31).
+schedules.csv,Simple working hours to respect time-of-day availability (UC-31).
+synonyms_glossary.csv,NLP normalisation for robust text parsing (optional).

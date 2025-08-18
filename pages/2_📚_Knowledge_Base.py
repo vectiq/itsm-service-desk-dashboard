@@ -2,14 +2,18 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import sys
+import os
+
+# Add the parent directory to the path to import utils
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.data_loader import ensure_data_loaded
 
 st.set_page_config(page_title="Knowledge Base", page_icon="📚", layout="wide")
 st.title("📚 Knowledge Base")
 
-dfs = st.session_state.get("dfs", {})
-if not dfs:
-    st.warning("Load data on the Home page first")
-    st.stop()
+# Ensure data is loaded
+dfs = ensure_data_loaded()
 
 # Get knowledge base data
 kb_articles = dfs.get("kb_articles.csv", pd.DataFrame())

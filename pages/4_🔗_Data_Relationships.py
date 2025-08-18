@@ -3,14 +3,18 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sys
+import os
+
+# Add the parent directory to the path to import utils
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.data_loader import ensure_data_loaded
 
 st.set_page_config(page_title="Data Relationships", page_icon="🔗", layout="wide")
 st.title("🔗 Data Relationships & Quality")
 
-dfs = st.session_state.get("dfs", {})
-if not dfs:
-    st.warning("Load data on the Home page first")
-    st.stop()
+# Ensure data is loaded
+dfs = ensure_data_loaded()
 
 # Create tabs for different views
 tab1, tab2, tab3, tab4 = st.tabs(["🗂️ Data Catalog", "🔗 Relationships", "✅ Quality Checks", "📊 Data Lineage"])

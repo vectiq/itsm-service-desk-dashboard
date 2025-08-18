@@ -1,0 +1,4 @@
+service_id,name,criticality,service_owner_id
+SV001,End User Services,High,A004
+SV002,Network Services,Critical,A003
+SV003,Collaboration Services,High,A005

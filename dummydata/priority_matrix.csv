@@ -1,0 +1,7 @@
+impact,urgency,priority
+High,High,P1
+High,Medium,P2
+Medium,High,P2
+Medium,Medium,P3
+Low,Medium,P3
+Low,Low,P4

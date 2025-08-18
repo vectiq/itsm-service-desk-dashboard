@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import pandas as pd
 import plotly.express as px
+from utils.data_loader import ensure_data_loaded, get_data
 
 st.set_page_config(page_title="ITSM AI Demo", page_icon="🧩", layout="wide")
 
@@ -15,89 +16,15 @@ Welcome to the ITSM Service Desk Dashboard! This application provides comprehens
 Explore your incident data, knowledge base, and service metrics below.
 """)
 
-# Data directory - Update this path to point to your CSV files
-HARDCODED_DATA_DIR = "/Users/dannardi/Downloads/ITSMF/AI_ITSM_Dummy_Data_Populated"
-# Example paths:
-# HARDCODED_DATA_DIR = "/path/to/your/csv/files"
-# HARDCODED_DATA_DIR = "./data"
-# HARDCODED_DATA_DIR = os.path.join(os.getcwd(), "data")
+# Auto-load data using utility function
 
-if "data_dir" not in st.session_state:
-    st.session_state["data_dir"] = HARDCODED_DATA_DIR
-if "dfs" not in st.session_state:
-    st.session_state["dfs"] = {}
-
-# Auto-load all CSV files on startup with proper load order
-if not st.session_state["dfs"] and os.path.isdir(HARDCODED_DATA_DIR):
-    dfs = {}
-
-    # Load order as specified in requirements (reference data first)
-    load_order = [
-        # Reference data (lookups)
-        "dataset_catalog.csv",
-        "services_catalog.csv",
-        "category_tree.csv",
-        "cmdb_ci.csv",
-        "users_agents.csv",
-        "assignment_groups.csv",
-        "agent_group_membership.csv",
-        "skills_catalog.csv",
-        "agent_skills.csv",
-        "synonyms_glossary.csv",
-        "priority_matrix.csv",
-
-        # Facts (historical data)
-        "incidents_resolved.csv",
-
-        # Live/demo inputs
-        "workload_queue.csv",
-        "agent_capacity_snapshots.csv",
-        "agent_performance_history.csv",
-        "schedules.csv",
-
-        # Knowledge base
-        "kb_templates.csv",
-        "kb_articles.csv"
-    ]
-
-    # Load files in specified order, then load any remaining CSV files
-    all_csv_files = [f for f in os.listdir(HARDCODED_DATA_DIR) if f.endswith('.csv')]
-
-    # Load ordered files first
-    for f in load_order:
-        if f in all_csv_files:
-            p = os.path.join(HARDCODED_DATA_DIR, f)
-            try:
-                df = pd.read_csv(p, encoding="utf-8-sig")
-                dfs[f] = df
-                all_csv_files.remove(f)  # Remove from remaining list
-            except Exception as e:
-                try:
-                    df = pd.read_csv(p)
-                    dfs[f] = df
-                    all_csv_files.remove(f)
-                except Exception:
-                    st.warning(f"Could not load {f}: {str(e)}")
-
-    # Load any remaining CSV files not in the ordered list
-    for f in all_csv_files:
-        p = os.path.join(HARDCODED_DATA_DIR, f)
-        try:
-            df = pd.read_csv(p, encoding="utf-8-sig")
-            dfs[f] = df
-        except Exception as e:
-            try:
-                df = pd.read_csv(p)
-                dfs[f] = df
-            except Exception:
-                st.warning(f"Could not load {f}: {str(e)}")
-
-    st.session_state["data_dir"] = HARDCODED_DATA_DIR
-    st.session_state["dfs"] = dfs
+# Auto-load data on every app startup/page load
+dfs = ensure_data_loaded()
 
 # Show current data status
-if st.session_state["dfs"]:
-    st.success(f"✅ Data loaded from: `{st.session_state['data_dir']}`")
+if dfs:
+    st.success(f"✅ Data loaded from: `{st.session_state.get('data_dir', 'dummydata')}`")
+    st.write(f"📊 Loaded {len(dfs)} data files")
 else:
     st.warning("⚠️ No data loaded")
 

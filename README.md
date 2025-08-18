@@ -41,9 +41,10 @@ A comprehensive ITSM (IT Service Management) dashboard built with Streamlit that
    pip install -r requirements.txt
    ```
 
-3. **Prepare your data**
-   - Place your CSV files in a directory
-   - Update the `HARDCODED_DATA_DIR` path in `app.py` to point to your data directory
+3. **Data is included**
+   - Sample ITSM data is included in the `dummydata/` folder
+   - The application automatically loads data from this folder
+   - To use your own data, replace the CSV files in `dummydata/` or update the path in `app.py`
 
 4. **Run the application**
    ```bash
@@ -73,11 +74,15 @@ The application expects the following CSV files:
 ## 🛠️ Configuration
 
 ### Data Directory
-Update the data directory path in `app.py`:
+The application uses the included sample data by default:
 
 ```python
-HARDCODED_DATA_DIR = "/path/to/your/csv/files"
+HARDCODED_DATA_DIR = os.path.join(os.path.dirname(__file__), "dummydata")
 ```
+
+To use your own data, either:
+- Replace the CSV files in the `dummydata/` folder, or
+- Update the path in `app.py` to point to your data directory
 
 ### Customization
 - **Styling**: Modify the Streamlit theme in `.streamlit/config.toml`

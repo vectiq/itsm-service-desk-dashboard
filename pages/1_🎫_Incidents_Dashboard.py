@@ -4,14 +4,18 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import sys
+import os
+
+# Add the parent directory to the path to import utils
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.data_loader import ensure_data_loaded
 
 st.set_page_config(page_title="Incidents Dashboard", page_icon="🎫", layout="wide")
 st.title("🎫 Incidents Dashboard")
 
-dfs = st.session_state.get("dfs", {})
-if not dfs:
-    st.warning("Load data on the Home page first")
-    st.stop()
+# Ensure data is loaded
+dfs = ensure_data_loaded()
 
 # Get all related data with proper relationships
 incidents = dfs.get("incidents_resolved.csv", pd.DataFrame())
@@ -28,29 +32,50 @@ incidents_enriched = incidents.copy()
 
 # Join with services catalog
 if not services.empty and 'service_id' in incidents.columns and 'service_id' in services.columns:
+    service_cols = ['service_id', 'name']
+    if 'criticality' in services.columns:
+        service_cols.append('criticality')
     incidents_enriched = incidents_enriched.merge(
-        services[['service_id', 'name', 'criticality']].rename(columns={'name': 'service_name'}),
+        services[service_cols].rename(columns={'name': 'service_name'}),
         on='service_id', how='left'
     )
 
 # Join with categories
 if not categories.empty and 'category_id' in incidents.columns and 'category_id' in categories.columns:
+    category_cols = ['category_id', 'name']
+    if 'parent_id' in categories.columns:
+        category_cols.append('parent_id')
+    if 'path' in categories.columns:
+        category_cols.append('path')
     incidents_enriched = incidents_enriched.merge(
-        categories[['category_id', 'name', 'parent_id']].rename(columns={'name': 'category_name'}),
+        categories[category_cols].rename(columns={'name': 'category_name'}),
         on='category_id', how='left'
     )
 
 # Join with assignment groups
 if not assignment_groups.empty and 'true_assignment_group_id' in incidents.columns and 'group_id' in assignment_groups.columns:
+    group_cols = ['group_id', 'name']
+    if 'service' in assignment_groups.columns:
+        group_cols.append('service')
+    if 'queue_type' in assignment_groups.columns:
+        group_cols.append('queue_type')
     incidents_enriched = incidents_enriched.merge(
-        assignment_groups[['group_id', 'name']].rename(columns={'group_id': 'true_assignment_group_id', 'name': 'group_name'}),
+        assignment_groups[group_cols].rename(columns={'group_id': 'true_assignment_group_id', 'name': 'group_name'}),
         on='true_assignment_group_id', how='left'
     )
 
 # Join with CMDB CIs
 if not cmdb_ci.empty and 'ci_id' in incidents.columns and 'ci_id' in cmdb_ci.columns:
+    ci_cols = ['ci_id', 'name']
+    if 'class' in cmdb_ci.columns:
+        ci_cols.append('class')
+    if 'environment' in cmdb_ci.columns:
+        ci_cols.append('environment')
+    if 'status' in cmdb_ci.columns:
+        ci_cols.append('status')
+
     incidents_enriched = incidents_enriched.merge(
-        cmdb_ci[['ci_id', 'name', 'type']].rename(columns={'name': 'ci_name', 'type': 'ci_type'}),
+        cmdb_ci[ci_cols].rename(columns={'name': 'ci_name', 'class': 'ci_class'}),
         on='ci_id', how='left'
     )
 
@@ -148,9 +173,10 @@ with tab1:
         filtered_incidents = filtered_incidents[filtered_incidents['location'] == selected_location]
 
     # Display filtered results
-    st.write(f"Showing {len(filtered_incidents):,} of {len(incidents):,} incidents")
+    total_incidents = len(filtered_incidents)
+    st.write(f"Showing {total_incidents:,} of {len(incidents):,} incidents")
 
-    # Enhanced display columns with enriched data
+    # Enhanced display columns with enriched data - prefer names over IDs
     display_columns = []
     preferred_columns = [
         'incident_id', 'created_on', 'short_description', 'true_priority',
@@ -158,27 +184,20 @@ with tab1:
         'location', 'resolution_code', 'time_to_resolve_mins'
     ]
 
-    # Fallback to original columns if enriched ones don't exist
-    fallback_columns = [
-        'incident_id', 'created_on', 'short_description', 'true_priority',
-        'category_id', 'service_id', 'true_assignment_group_id', 'ci_id',
-        'location', 'resolution_code', 'time_to_resolve_mins'
-    ]
-
+    # Only add columns that exist, prioritizing human-readable names
     for col in preferred_columns:
         if col in filtered_incidents.columns:
             display_columns.append(col)
-        elif col.replace('_name', '_id') in filtered_incidents.columns:
-            display_columns.append(col.replace('_name', '_id'))
 
-    # Add any missing essential columns
-    for col in fallback_columns:
+    # Add any other important columns that aren't IDs
+    additional_columns = ['impact', 'urgency', 'channel', 'description']
+    for col in additional_columns:
         if col in filtered_incidents.columns and col not in display_columns:
             display_columns.append(col)
 
-    if display_columns:
+    if display_columns and total_incidents > 0:
         # Rename columns for better display
-        display_df = filtered_incidents[display_columns].head(100).copy()
+        display_df = filtered_incidents[display_columns].copy()
 
         column_renames = {
             'incident_id': 'Incident ID',
@@ -196,10 +215,16 @@ with tab1:
 
         display_df = display_df.rename(columns=column_renames)
 
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        # Display all incidents with increased height
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            height=600
+        )
 
-        if len(filtered_incidents) > 100:
-            st.info(f"Showing first 100 rows. Total: {len(filtered_incidents):,} incidents")
+    elif total_incidents == 0:
+        st.info("No incidents match the selected filters")
 
 with tab2:
     st.subheader("Incident Analytics")
