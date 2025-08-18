@@ -27,12 +27,60 @@ if "data_dir" not in st.session_state:
 if "dfs" not in st.session_state:
     st.session_state["dfs"] = {}
 
-# Auto-load all CSV files on startup
+# Auto-load all CSV files on startup with proper load order
 if not st.session_state["dfs"] and os.path.isdir(HARDCODED_DATA_DIR):
     dfs = {}
-    csv_files = [f for f in os.listdir(HARDCODED_DATA_DIR) if f.endswith('.csv')]
 
-    for f in csv_files:
+    # Load order as specified in requirements (reference data first)
+    load_order = [
+        # Reference data (lookups)
+        "dataset_catalog.csv",
+        "services_catalog.csv",
+        "category_tree.csv",
+        "cmdb_ci.csv",
+        "users_agents.csv",
+        "assignment_groups.csv",
+        "agent_group_membership.csv",
+        "skills_catalog.csv",
+        "agent_skills.csv",
+        "synonyms_glossary.csv",
+        "priority_matrix.csv",
+
+        # Facts (historical data)
+        "incidents_resolved.csv",
+
+        # Live/demo inputs
+        "workload_queue.csv",
+        "agent_capacity_snapshots.csv",
+        "agent_performance_history.csv",
+        "schedules.csv",
+
+        # Knowledge base
+        "kb_templates.csv",
+        "kb_articles.csv"
+    ]
+
+    # Load files in specified order, then load any remaining CSV files
+    all_csv_files = [f for f in os.listdir(HARDCODED_DATA_DIR) if f.endswith('.csv')]
+
+    # Load ordered files first
+    for f in load_order:
+        if f in all_csv_files:
+            p = os.path.join(HARDCODED_DATA_DIR, f)
+            try:
+                df = pd.read_csv(p, encoding="utf-8-sig")
+                dfs[f] = df
+                all_csv_files.remove(f)  # Remove from remaining list
+            except Exception as e:
+                try:
+                    df = pd.read_csv(p)
+                    dfs[f] = df
+                    all_csv_files.remove(f)
+                except Exception:
+                    st.warning(f"Could not load {f}: {str(e)}")
+
+    # Load any remaining CSV files not in the ordered list
+    for f in all_csv_files:
         p = os.path.join(HARDCODED_DATA_DIR, f)
         try:
             df = pd.read_csv(p, encoding="utf-8-sig")
@@ -90,49 +138,76 @@ with st.expander("🔧 Manual Data Loading (Optional)", expanded=False):
             else:
                 st.success("CSV files loaded")
 
-st.subheader("📊 Service Desk Overview")
+st.subheader("📊 ITSM Data Universe Overview")
 if st.session_state["dfs"]:
-    # Show key metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
-
+    # Get all key datasets
     incidents = st.session_state["dfs"].get("incidents_resolved.csv", pd.DataFrame())
     workload = st.session_state["dfs"].get("workload_queue.csv", pd.DataFrame())
-    kb_articles = st.session_state["dfs"].get("kb_articles.csv", pd.DataFrame())
-    kb_templates = st.session_state["dfs"].get("kb_templates.csv", pd.DataFrame())
     services = st.session_state["dfs"].get("services_catalog.csv", pd.DataFrame())
+    categories = st.session_state["dfs"].get("category_tree.csv", pd.DataFrame())
+    agents = st.session_state["dfs"].get("users_agents.csv", pd.DataFrame())
+    skills = st.session_state["dfs"].get("skills_catalog.csv", pd.DataFrame())
+    agent_skills = st.session_state["dfs"].get("agent_skills.csv", pd.DataFrame())
+    groups = st.session_state["dfs"].get("assignment_groups.csv", pd.DataFrame())
+    cmdb = st.session_state["dfs"].get("cmdb_ci.csv", pd.DataFrame())
+    kb_templates = st.session_state["dfs"].get("kb_templates.csv", pd.DataFrame())
+    kb_articles = st.session_state["dfs"].get("kb_articles.csv", pd.DataFrame())
+
+    # Core metrics
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
-        if not incidents.empty:
-            st.metric("🎫 Resolved Incidents", f"{len(incidents):,}")
-        else:
-            st.metric("🎫 Resolved Incidents", "No data")
+        st.metric("🎫 Resolved Incidents", f"{len(incidents):,}" if not incidents.empty else "0")
 
     with col2:
-        if not workload.empty:
-            st.metric("⏳ Current Queue", f"{len(workload):,}")
-        else:
-            st.metric("⏳ Current Queue", "No data")
+        st.metric("⏳ Current Queue", f"{len(workload):,}" if not workload.empty else "0")
 
     with col3:
-        total_kb = 0
-        if not kb_articles.empty:
-            total_kb += len(kb_articles)
-        if not kb_templates.empty:
-            total_kb += len(kb_templates)
+        st.metric("🔧 Services", f"{len(services):,}" if not services.empty else "0")
+
+    with col4:
+        st.metric("📂 Categories", f"{len(categories):,}" if not categories.empty else "0")
+
+    with col5:
+        st.metric("👥 Agents", f"{len(agents):,}" if not agents.empty else "0")
+
+    with col6:
+        st.metric("🎯 Skills", f"{len(skills):,}" if not skills.empty else "0")
+
+    # Additional metrics row
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+    with col1:
+        st.metric("👥 Groups", f"{len(groups):,}" if not groups.empty else "0")
+
+    with col2:
+        st.metric("💻 CIs", f"{len(cmdb):,}" if not cmdb.empty else "0")
+
+    with col3:
+        total_kb = len(kb_articles) + len(kb_templates) if not kb_articles.empty or not kb_templates.empty else 0
         st.metric("📚 KB Items", f"{total_kb:,}")
 
     with col4:
-        if not services.empty:
-            st.metric("🔧 Services", f"{len(services):,}")
-        else:
-            st.metric("🔧 Services", "No data")
-
-    with col5:
         if not incidents.empty and 'true_priority' in incidents.columns:
             high_priority = len(incidents[incidents['true_priority'].isin(['P1', 'P2'])])
             st.metric("🚨 High Priority", f"{high_priority:,}")
         else:
-            st.metric("🚨 High Priority", "No data")
+            st.metric("🚨 High Priority", "0")
+
+    with col5:
+        if not agent_skills.empty:
+            total_skill_assignments = len(agent_skills)
+            st.metric("🔗 Skill Assignments", f"{total_skill_assignments:,}")
+        else:
+            st.metric("🔗 Skill Assignments", "0")
+
+    with col6:
+        # Data completeness score
+        expected_files = ["services_catalog.csv", "category_tree.csv", "incidents_resolved.csv",
+                         "workload_queue.csv", "users_agents.csv", "skills_catalog.csv"]
+        loaded_files = [f for f in expected_files if f in st.session_state["dfs"] and not st.session_state["dfs"][f].empty]
+        completeness = int((len(loaded_files) / len(expected_files)) * 100)
+        st.metric("📊 Data Completeness", f"{completeness}%")
 
     # Quick data preview
     st.subheader("📋 Quick Data Preview")
@@ -147,25 +222,57 @@ else:
     st.info("⚠️ No data loaded. Please check the data directory path.")
 
     # Show expected data structure
-    with st.expander("📋 Available Data Files", expanded=True):
-        key_files = {
-            "incidents_resolved.csv": "Historical incident data with resolutions",
-            "workload_queue.csv": "Current open incidents/requests",
-            "kb_articles.csv": "Knowledge base articles",
-            "kb_templates.csv": "Knowledge base templates",
-            "services_catalog.csv": "Service catalog and definitions",
-            "category_tree.csv": "Incident category hierarchy",
-            "priority_matrix.csv": "Priority calculation matrix",
-            "users_agents.csv": "User and agent information"
+    with st.expander("📋 ITSM Data Universe Files", expanded=True):
+
+        # Organize files by category as per requirements
+        file_categories = {
+            "📋 Reference Data (Lookups)": {
+                "dataset_catalog.csv": "Data catalog index",
+                "services_catalog.csv": "Service catalog and definitions",
+                "category_tree.csv": "Incident category hierarchy",
+                "cmdb_ci.csv": "Configuration items database",
+                "users_agents.csv": "User and agent information",
+                "assignment_groups.csv": "Support group definitions",
+                "agent_group_membership.csv": "Agent-to-group assignments",
+                "skills_catalog.csv": "Available skills catalog",
+                "agent_skills.csv": "Agent skill assignments",
+                "synonyms_glossary.csv": "Text normalization dictionary",
+                "priority_matrix.csv": "Priority calculation matrix"
+            },
+            "📊 Historical Facts": {
+                "incidents_resolved.csv": "Historical incident corpus (~300 rows)"
+            },
+            "⚡ Live/Demo Data": {
+                "workload_queue.csv": "Current open items needing assignment",
+                "agent_capacity_snapshots.csv": "Agent workload capacity",
+                "agent_performance_history.csv": "Agent performance metrics",
+                "schedules.csv": "Agent availability schedules"
+            },
+            "📚 Knowledge Base": {
+                "kb_templates.csv": "KB article templates/scaffolds",
+                "kb_articles.csv": "Knowledge base articles (target for AI)"
+            }
         }
 
-        st.write("**Key ITSM Data Files:**")
-        for file, description in key_files.items():
-            st.write(f"• **{file}**: {description}")
+        for category, files in file_categories.items():
+            st.write(f"**{category}:**")
+            for file, description in files.items():
+                if file in st.session_state.get("dfs", {}):
+                    row_count = len(st.session_state["dfs"][file])
+                    st.write(f"• ✅ **{file}**: {description} ({row_count:,} rows)")
+                else:
+                    st.write(f"• ❌ **{file}**: {description} (not loaded)")
+            st.write("")
 
-        # Show all loaded files
-        if st.session_state["dfs"]:
-            st.write(f"\n**All Loaded Files ({len(st.session_state['dfs'])} total):**")
-            for filename in sorted(st.session_state["dfs"].keys()):
-                row_count = len(st.session_state["dfs"][filename])
-                st.write(f"• {filename} ({row_count:,} rows)")
+        # Show any additional loaded files
+        if st.session_state.get("dfs"):
+            all_expected = set()
+            for files in file_categories.values():
+                all_expected.update(files.keys())
+
+            additional_files = [f for f in st.session_state["dfs"].keys() if f not in all_expected]
+            if additional_files:
+                st.write("**🔍 Additional Files:**")
+                for filename in sorted(additional_files):
+                    row_count = len(st.session_state["dfs"][filename])
+                    st.write(f"• **{filename}**: ({row_count:,} rows)")
