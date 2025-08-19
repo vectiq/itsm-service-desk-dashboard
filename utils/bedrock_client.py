@@ -167,15 +167,19 @@ class BedrockClient:
 
             # Filter out profiles that don't match our region
             if profile_id and models:
-                # Skip APAC profiles if we're in US region
-                if self.region == 'us-east-1' and profile_id.startswith('apac.'):
-                    continue
-                # Skip EU profiles if we're in US region
-                if self.region == 'us-east-1' and profile_id.startswith('eu.'):
-                    continue
-                # Only include US profiles for US region
-                if self.region == 'us-east-1' and not profile_id.startswith('us.'):
-                    continue
+                # Filter profiles by region
+                if self.region == 'us-east-1':
+                    # US region: only include US profiles
+                    if not profile_id.startswith('us.'):
+                        continue
+                elif self.region == 'ap-southeast-2':
+                    # APAC region: prefer APAC profiles, allow US as fallback
+                    if profile_id.startswith('eu.'):
+                        continue
+                else:
+                    # Other regions: skip region-specific profiles that don't match
+                    if profile_id.startswith('apac.') or profile_id.startswith('eu.'):
+                        continue
 
                 model_name = models[0].get('modelId', profile_name)
                 profile_models[profile_id] = f"{profile_name} (Profile)"
@@ -245,18 +249,32 @@ class BedrockClient:
         """
         # Check if this model needs an inference profile
         if "anthropic.claude" in model_id:
-            # Try US inference profile for Claude models
-            if not model_id.startswith("us."):
-                inference_profile_id = f"us.{model_id}"
-                logger.info(f"Converting {model_id} to inference profile: {inference_profile_id}")
-                return inference_profile_id
+            # Map to correct regional inference profile
+            if self.region == 'ap-southeast-2':
+                # Use APAC inference profile for AP regions
+                if not model_id.startswith("apac."):
+                    inference_profile_id = f"apac.{model_id}"
+                    logger.info(f"Converting {model_id} to APAC inference profile: {inference_profile_id}")
+                    return inference_profile_id
+            else:
+                # Use US inference profile for other regions
+                if not model_id.startswith("us."):
+                    inference_profile_id = f"us.{model_id}"
+                    logger.info(f"Converting {model_id} to US inference profile: {inference_profile_id}")
+                    return inference_profile_id
 
         elif "amazon.nova" in model_id:
-            # Try US inference profile for Nova models
-            if not model_id.startswith("us."):
-                inference_profile_id = f"us.{model_id}"
-                logger.info(f"Converting {model_id} to inference profile: {inference_profile_id}")
-                return inference_profile_id
+            # Map to correct regional inference profile
+            if self.region == 'ap-southeast-2':
+                if not model_id.startswith("apac."):
+                    inference_profile_id = f"apac.{model_id}"
+                    logger.info(f"Converting {model_id} to APAC inference profile: {inference_profile_id}")
+                    return inference_profile_id
+            else:
+                if not model_id.startswith("us."):
+                    inference_profile_id = f"us.{model_id}"
+                    logger.info(f"Converting {model_id} to US inference profile: {inference_profile_id}")
+                    return inference_profile_id
 
         # Return original model ID if no conversion needed
         return model_id
@@ -296,8 +314,8 @@ class BedrockClient:
         if system_prompt:
             final_prompt = f"{system_prompt}\n\n{prompt}"
 
-        # Try with original model ID first
-        for attempt_model_id in [model_id, self._get_inference_profile_id(model_id)]:
+        # Try with inference profile first, then original model ID
+        for attempt_model_id in [self._get_inference_profile_id(model_id), model_id]:
             # Try Converse API first (preferred)
             try:
                 return self._invoke_with_converse(final_prompt, attempt_model_id, max_tokens, temperature, system_prompt)
@@ -310,8 +328,8 @@ class BedrockClient:
             except Exception as e:
                 logger.warning(f"Native API failed for {attempt_model_id}: {str(e)}")
 
-                # If this was a ValidationException about inference profiles, try the next ID
-                if "inference profile" in str(e) and attempt_model_id == model_id:
+                # If this was a ValidationException about inference profiles or throughput, try the next ID
+                if ("inference profile" in str(e) or "on-demand throughput" in str(e)) and attempt_model_id != self._get_inference_profile_id(model_id):
                     logger.info(f"Trying inference profile for {model_id}")
                     continue
 
