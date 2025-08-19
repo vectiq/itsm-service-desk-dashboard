@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import plotly.express as px
 from utils.data_loader import ensure_data_loaded, get_data
+from utils.bedrock_client import bedrock_client
 
 st.set_page_config(page_title="ITSM AI Demo", page_icon="🧩", layout="wide")
 
@@ -21,12 +22,23 @@ Explore your incident data, knowledge base, and service metrics below.
 # Auto-load data on every app startup/page load
 dfs = ensure_data_loaded()
 
-# Show current data status
-if dfs:
-    st.success(f"✅ Data loaded from: `{st.session_state.get('data_dir', 'dummydata')}`")
-    st.write(f"📊 Loaded {len(dfs)} data files")
-else:
-    st.warning("⚠️ No data loaded")
+# Show current data and AI status
+col1, col2 = st.columns(2)
+
+with col1:
+    if dfs:
+        st.success(f"✅ Data loaded from: `{st.session_state.get('data_dir', 'dummydata')}`")
+        st.write(f"📊 Loaded {len(dfs)} data files")
+    else:
+        st.warning("⚠️ No data loaded")
+
+with col2:
+    if bedrock_client.is_available():
+        st.success("🤖 AWS Bedrock AI: Connected")
+        st.write("🎯 AI Features: UC-02, UC-21, UC-31 Ready")
+    else:
+        st.warning("🤖 AWS Bedrock AI: Not configured")
+        st.write("💡 Add AWS_BEARER_TOKEN_BEDROCK to .env file to enable AI features")
 
 # Optional manual data loading section
 with st.expander("🔧 Manual Data Loading (Optional)", expanded=False):
