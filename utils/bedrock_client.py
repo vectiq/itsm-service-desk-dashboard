@@ -143,8 +143,19 @@ class BedrockClient:
             profile_id = profile.get('inferenceProfileId', '')
             profile_name = profile.get('inferenceProfileName', profile_id)
             models = profile.get('models', [])
-            if models and profile_id:
-                # Use the underlying model name but with profile ID
+
+            # Filter out profiles that don't match our region
+            if profile_id and models:
+                # Skip APAC profiles if we're in US region
+                if self.region == 'us-east-1' and profile_id.startswith('apac.'):
+                    continue
+                # Skip EU profiles if we're in US region
+                if self.region == 'us-east-1' and profile_id.startswith('eu.'):
+                    continue
+                # Only include US profiles for US region
+                if self.region == 'us-east-1' and not profile_id.startswith('us.'):
+                    continue
+
                 model_name = models[0].get('modelId', profile_name)
                 profile_models[profile_id] = f"{profile_name} (Profile)"
 
@@ -163,6 +174,29 @@ class BedrockClient:
                     models_dict[model_id] = model_name
 
         return models_dict
+
+    def test_model(self, model_id: str) -> bool:
+        """Test if a model is actually working"""
+        try:
+            test_prompt = "Hello"
+            response = self.invoke_model(test_prompt, model_id, 10, 0.1)
+            return response is not None and len(response.strip()) > 0
+        except Exception as e:
+            logger.warning(f"Model {model_id} test failed: {str(e)}")
+            return False
+
+    def get_working_models(self) -> Dict[str, str]:
+        """Get only models that actually work in this region"""
+        all_models = self.get_available_models()
+        working_models = {}
+
+        for model_id, model_name in all_models.items():
+            if self.test_model(model_id):
+                working_models[model_id] = model_name
+            else:
+                logger.warning(f"Model {model_id} ({model_name}) failed test, excluding")
+
+        return working_models
 
     def _supports_text_generation(self, model: Dict) -> bool:
         """Check if model supports text generation"""
@@ -217,7 +251,7 @@ class BedrockClient:
             logger.warning(f"Could not list inference profiles: {str(e)}")
             return []
 
-    def invoke_model(self, prompt: str, model_id: str, max_tokens: int = 1000, temperature: float = 0.7) -> Optional[str]:
+    def invoke_model(self, prompt: str, model_id: str, max_tokens: int = 1000, temperature: float = 0.7, system_prompt: Optional[str] = None) -> Optional[str]:
         """
         Invoke any supported model for text generation.
         Uses Converse API when available, falls back to InvokeModel.
@@ -228,6 +262,7 @@ class BedrockClient:
             model_id: The specific model ID to use
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0 to 1.0)
+            system_prompt: Optional system prompt to prepend
 
         Returns:
             Generated text response or None if error
@@ -235,17 +270,22 @@ class BedrockClient:
         if not self.is_available():
             return None
 
+        # Combine system prompt with user prompt if provided
+        final_prompt = prompt
+        if system_prompt:
+            final_prompt = f"{system_prompt}\n\n{prompt}"
+
         # Try with original model ID first
         for attempt_model_id in [model_id, self._get_inference_profile_id(model_id)]:
             # Try Converse API first (preferred)
             try:
-                return self._invoke_with_converse(prompt, attempt_model_id, max_tokens, temperature)
+                return self._invoke_with_converse(final_prompt, attempt_model_id, max_tokens, temperature, system_prompt)
             except Exception as e:
                 logger.warning(f"Converse API failed for {attempt_model_id}: {str(e)}")
 
             # Fall back to InvokeModel API
             try:
-                return self._invoke_with_native_api(prompt, attempt_model_id, max_tokens, temperature)
+                return self._invoke_with_native_api(final_prompt, attempt_model_id, max_tokens, temperature)
             except Exception as e:
                 logger.warning(f"Native API failed for {attempt_model_id}: {str(e)}")
 
@@ -257,7 +297,7 @@ class BedrockClient:
         st.error(f"Error invoking model {model_id}: All attempts failed")
         return None
 
-    def _invoke_with_converse(self, prompt: str, model_id: str, max_tokens: int, temperature: float) -> Optional[str]:
+    def _invoke_with_converse(self, prompt: str, model_id: str, max_tokens: int, temperature: float, system_prompt: Optional[str] = None) -> Optional[str]:
         """
         Use the Converse API (preferred method following AWS guide)
         """
@@ -269,15 +309,22 @@ class BedrockClient:
                 }
             ]
 
-            response = self.bedrock_runtime.converse(
-                modelId=model_id,
-                messages=conversation,
-                inferenceConfig={
+            # Prepare converse parameters
+            converse_params = {
+                "modelId": model_id,
+                "messages": conversation,
+                "inferenceConfig": {
                     "maxTokens": max_tokens,
                     "temperature": temperature,
                     "topP": 0.9
                 },
-            )
+            }
+
+            # Add system prompt if provided (Converse API supports this properly)
+            if system_prompt:
+                converse_params["system"] = [{"text": system_prompt}]
+
+            response = self.bedrock_runtime.converse(**converse_params)
 
             # Extract response text
             response_text = response["output"]["message"]["content"][0]["text"]
