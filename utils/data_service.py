@@ -16,17 +16,28 @@ class DataService:
     
     def __init__(self):
         """Initialize data service"""
-        self.use_mongodb = data_ingest_manager.is_available()
         self.csv_data = None
-        
+        self._refresh_mongodb_status()
+
+    def _refresh_mongodb_status(self):
+        """Refresh MongoDB availability and data status"""
+        self.use_mongodb = data_ingest_manager.is_available()
+
         if self.use_mongodb:
             # Check if MongoDB has data
-            data_exists = data_ingest_manager.check_data_exists()
-            self.mongodb_has_data = any(data_exists.values())
-            
-            if not self.mongodb_has_data:
-                logger.info("MongoDB available but no data found, will use CSV fallback")
+            try:
+                data_exists = data_ingest_manager.check_data_exists()
+                self.mongodb_has_data = any(data_exists.values())
+
+                if self.mongodb_has_data:
+                    logger.info(f"MongoDB available with data: {data_exists}")
+                else:
+                    logger.info("MongoDB available but no data found, will use CSV fallback")
+                    self.use_mongodb = False
+            except Exception as e:
+                logger.error(f"Error checking MongoDB data: {str(e)}")
                 self.use_mongodb = False
+                self.mongodb_has_data = False
         else:
             logger.info("MongoDB not available, using CSV data")
             self.mongodb_has_data = False
@@ -34,6 +45,9 @@ class DataService:
     def get_incidents(self, limit: Optional[int] = None) -> pd.DataFrame:
         """Get incidents data from MongoDB or CSV"""
         try:
+            # Refresh MongoDB status to catch newly ingested data
+            self._refresh_mongodb_status()
+
             if self.use_mongodb and self.mongodb_has_data:
                 # Get from MongoDB
                 incidents = data_ingest_manager.get_incidents(limit=limit)
@@ -46,10 +60,10 @@ class DataService:
                     return df
                 else:
                     logger.warning("No incidents found in MongoDB, falling back to CSV")
-            
+
             # Fallback to CSV
             return self._get_csv_incidents(limit)
-            
+
         except Exception as e:
             logger.error(f"Error getting incidents: {str(e)}")
             # Fallback to CSV on error
@@ -58,6 +72,9 @@ class DataService:
     def get_agents(self, limit: Optional[int] = None) -> pd.DataFrame:
         """Get agents data from MongoDB or CSV"""
         try:
+            # Refresh MongoDB status
+            self._refresh_mongodb_status()
+
             if self.use_mongodb and self.mongodb_has_data:
                 # Get from MongoDB
                 agents = data_ingest_manager.get_agents(limit=limit)
@@ -69,10 +86,10 @@ class DataService:
                     return df
                 else:
                     logger.warning("No agents found in MongoDB, falling back to CSV")
-            
+
             # Fallback to CSV
             return self._get_csv_agents(limit)
-            
+
         except Exception as e:
             logger.error(f"Error getting agents: {str(e)}")
             return self._get_csv_agents(limit)
@@ -80,6 +97,9 @@ class DataService:
     def get_workload(self, limit: Optional[int] = None) -> pd.DataFrame:
         """Get workload data from MongoDB or CSV"""
         try:
+            # Refresh MongoDB status
+            self._refresh_mongodb_status()
+
             if self.use_mongodb and self.mongodb_has_data:
                 # Get from MongoDB
                 workload = data_ingest_manager.get_workload(limit=limit)
@@ -91,10 +111,10 @@ class DataService:
                     return df
                 else:
                     logger.warning("No workload found in MongoDB, falling back to CSV")
-            
+
             # Fallback to CSV
             return self._get_csv_workload(limit)
-            
+
         except Exception as e:
             logger.error(f"Error getting workload: {str(e)}")
             return self._get_csv_workload(limit)
@@ -156,6 +176,9 @@ class DataService:
     
     def get_data_source_info(self) -> Dict[str, str]:
         """Get information about current data source"""
+        # Refresh MongoDB status
+        self._refresh_mongodb_status()
+
         if self.use_mongodb and self.mongodb_has_data:
             stats = data_ingest_manager.get_data_stats()
             return {
@@ -170,7 +193,7 @@ class DataService:
                 "source": "CSV Files",
                 "status": "📄 File-based",
                 "incidents_count": "Variable",
-                "agents_count": "Variable", 
+                "agents_count": "Variable",
                 "workload_count": "Variable"
             }
     
