@@ -10,9 +10,14 @@ import os
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_loader import ensure_data_loaded
+from utils.bedrock_client import BedrockClient
+from utils.settings_manager import settings_manager
 
 st.set_page_config(page_title="Incidents Dashboard", page_icon="🎫", layout="wide")
 st.title("🎫 Incidents Dashboard")
+
+# Initialize bedrock client
+bedrock_client = BedrockClient()
 
 # Ensure data is loaded
 dfs = ensure_data_loaded()
@@ -251,7 +256,7 @@ with tab1:
         column_renames = {
             'incident_id': 'Incident ID',
             'created_on': 'Created',
-            'short_description': 'Description',
+            'short_description': 'Title',
             'true_priority': 'Priority',
             'category_name': 'Category',
             'service_name': 'Service',
@@ -264,13 +269,142 @@ with tab1:
 
         display_df = display_df.rename(columns=column_renames)
 
-        # Display all incidents with increased height
-        st.dataframe(
+        # Display the table with row selection
+        event = st.dataframe(
             display_df,
             use_container_width=True,
             hide_index=True,
-            height=600
+            height=400,
+            on_select="rerun",
+            selection_mode="single-row"
         )
+
+        # Actions section
+        st.write("**Actions:**")
+
+        # Check if a row is selected
+        if event.selection.rows:
+            selected_row_idx = event.selection.rows[0]
+            selected_row = display_df.iloc[selected_row_idx]
+            incident_data = filtered_incidents.iloc[selected_row_idx]
+
+            # Get incident ID
+            if 'incident_id' in incident_data:
+                selected_incident_id = incident_data['incident_id']
+            else:
+                selected_incident_id = f"Row_{selected_row_idx}"
+
+            st.write(f"**Selected:** {selected_incident_id} - {selected_row.get('Title', 'No title')}")
+
+            # Action buttons in columns
+            action_cols = st.columns(4)
+
+            with action_cols[0]:
+                if st.button("👁️ View", key=f"view_{selected_incident_id}"):
+                    st.session_state[f"show_details_{selected_incident_id}"] = not st.session_state.get(f"show_details_{selected_incident_id}", False)
+                    st.rerun()
+
+            with action_cols[1]:
+                if st.button("✏️ Edit", key=f"edit_{selected_incident_id}"):
+                    st.info("Edit functionality coming soon...")
+
+            with action_cols[2]:
+                if st.button("🗑️ Delete", key=f"delete_{selected_incident_id}"):
+                    st.warning(f"Delete {selected_incident_id} - Demo mode (no actual deletion)")
+
+            with action_cols[3]:
+                if st.button("🎯 Auto-Classify", key=f"classify_{selected_incident_id}"):
+                    # Get the incident data for classification
+                    title = incident_data.get('short_description', '')
+                    description = incident_data.get('description', '')
+
+                    if title and description:
+                        if bedrock_client.is_available():
+                            with st.spinner(f"Classifying {selected_incident_id}..."):
+                                # Get settings from MongoDB
+                                ai_settings = settings_manager.get_ai_model_settings()
+                                system_prompt = settings_manager.get_setting("system_prompts.incident_triage",
+                                    "You are an expert ITSM analyst specializing in incident classification and priority assessment.")
+
+                                model_id = ai_settings.get("selected_model_id")
+                                model_name = ai_settings.get("selected_model_name", "Unknown Model")
+                                max_tokens = ai_settings.get("max_tokens", 300)
+                                temperature = ai_settings.get("temperature", 0.3)
+
+                                if model_id:
+                                    # Use same prompt structure as UC-02
+                                    prompt = f"""Analyze this incident and determine its priority level.
+
+                                    Incident Title: {title}
+                                    Incident Description: {description}
+
+                                    Priority Levels:
+                                    - P1: Critical - System down, major business impact
+                                    - P2: High - Significant impact, workaround available
+                                    - P3: Medium - Moderate impact, standard response
+                                    - P4: Low - Minor impact, can be scheduled
+
+                                    Respond with:
+                                    Priority: [P1/P2/P3/P4]
+                                    Reasoning: [Brief explanation]
+                                    """
+
+                                    st.info(f"Using MongoDB settings: {model_name} | Tokens: {max_tokens} | Temp: {temperature}")
+
+                                    try:
+                                        response = bedrock_client.invoke_model(
+                                            prompt,
+                                            model_id,
+                                            max_tokens,
+                                            temperature,
+                                            system_prompt=system_prompt
+                                        )
+
+                                        if response:
+                                            lines = response.split('\n')
+                                            priority = "P3"
+                                            reasoning = "Unable to determine"
+
+                                            for line in lines:
+                                                if line.startswith('Priority:'):
+                                                    priority = line.split(':')[1].strip()
+                                                elif line.startswith('Reasoning:'):
+                                                    reasoning = line.split(':', 1)[1].strip()
+
+                                            st.success(f"**AI Classification for {selected_incident_id}:**")
+                                            st.write(f"**Predicted Priority:** {priority}")
+                                            st.write(f"**Reasoning:** {reasoning}")
+
+                                            # Show the system prompt used
+                                            with st.expander("🔍 Classification Details", expanded=False):
+                                                st.write(f"**Model:** {model_name}")
+                                                st.write(f"**Model ID:** {model_id}")
+                                                st.write(f"**System Prompt:** {system_prompt}")
+                                                st.write(f"**Title:** {title}")
+                                                st.write(f"**Description:** {description}")
+                                        else:
+                                            st.error("❌ No response from AI model")
+                                    except Exception as e:
+                                        st.error(f"❌ Error during classification: {str(e)}")
+                                else:
+                                    st.warning("⚠️ No model configured. Please go to AI Features page and select a model first.")
+                        else:
+                            st.error("❌ AI service not available - check AWS credentials")
+                    else:
+                        st.warning("⚠️ Incident missing title or description")
+
+            # Show details if requested
+            if st.session_state.get(f"show_details_{selected_incident_id}", False):
+                with st.expander(f"Details for {selected_incident_id}", expanded=True):
+                    detail_cols = st.columns(2)
+                    with detail_cols[0]:
+                        for col in display_df.columns[:len(display_df.columns)//2]:
+                            st.write(f"**{col}:** {selected_row[col]}")
+                    with detail_cols[1]:
+                        for col in display_df.columns[len(display_df.columns)//2:]:
+                            st.write(f"**{col}:** {selected_row[col]}")
+        else:
+            st.info("👆 Click on a row in the table above to select it and perform actions")
 
     elif total_incidents == 0:
         st.info("No incidents match the selected filters")

@@ -7,6 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_loader import ensure_data_loaded
 from utils.bedrock_client import bedrock_client
+from utils.settings_manager import settings_manager
 
 st.set_page_config(page_title="AI Features", page_icon="🤖", layout="wide")
 st.title("🤖 AI-Powered ITSM Features")
@@ -23,13 +24,9 @@ if not bedrock_client.is_available():
 
 st.success("✅ AWS Bedrock AI is connected and ready!")
 
-# Initialize session state defaults
-if "selected_model_idx" not in st.session_state:
-    st.session_state.selected_model_idx = 0
-if "global_max_tokens" not in st.session_state:
-    st.session_state.global_max_tokens = 1000
-if "global_temperature" not in st.session_state:
-    st.session_state.global_temperature = 0.7
+# Check MongoDB availability
+if not settings_manager.is_available():
+    st.warning("⚠️ MongoDB not available. Some settings may not persist.")
 
 # Admin settings in sidebar
 st.sidebar.header("⚙️ AI Model Configuration")
@@ -39,28 +36,26 @@ available_models = bedrock_client.get_available_models()
 model_options = list(available_models.keys())
 model_labels = [f"{available_models[model_id]}" for model_id in model_options]
 
+# Get current settings from MongoDB
+current_ai_settings = settings_manager.get_ai_model_settings()
+current_model_id = current_ai_settings.get("selected_model_id")
+
+# Find current model index
+selected_model_idx = 0
+if current_model_id and current_model_id in model_options:
+    selected_model_idx = model_options.index(current_model_id)
+
 # Model selection
-selected_model_idx = st.sidebar.selectbox(
+new_model_idx = st.sidebar.selectbox(
     "AI Model:",
     range(len(model_options)),
     format_func=lambda x: model_labels[x],
-    index=st.session_state.selected_model_idx,
+    index=selected_model_idx,
     key="global_model_selector"
 )
 
-selected_model_id = model_options[selected_model_idx]
+selected_model_id = model_options[new_model_idx]
 selected_model_name = available_models[selected_model_id]
-
-# Update session state for model selection
-if selected_model_idx != st.session_state.selected_model_idx:
-    st.session_state.selected_model_idx = selected_model_idx
-    # Reset max_tokens when model changes
-    if "claude" in selected_model_id:
-        st.session_state.global_max_tokens = min(st.session_state.global_max_tokens, 4000)
-    elif "nova" in selected_model_id:
-        st.session_state.global_max_tokens = min(st.session_state.global_max_tokens, 5000)
-    else:
-        st.session_state.global_max_tokens = min(st.session_state.global_max_tokens, 2000)
 
 # Model parameters with dynamic ranges
 if "claude" in selected_model_id:
@@ -70,11 +65,18 @@ elif "nova" in selected_model_id:
 else:
     max_tokens_range = (100, 2000)
 
+# Get current values from MongoDB
+current_max_tokens = current_ai_settings.get("max_tokens", 1000)
+current_temperature = current_ai_settings.get("temperature", 0.7)
+
+# Ensure current values are within range
+current_max_tokens = min(current_max_tokens, max_tokens_range[1])
+
 max_tokens = st.sidebar.slider(
     "Max Tokens:",
     max_tokens_range[0],
     max_tokens_range[1],
-    min(st.session_state.global_max_tokens, max_tokens_range[1]),
+    current_max_tokens,
     key="global_max_tokens"
 )
 
@@ -82,17 +84,38 @@ temperature = st.sidebar.slider(
     "Temperature:",
     0.0,
     1.0,
-    st.session_state.global_temperature,
+    current_temperature,
     0.1,
     key="global_temperature"
 )
 
-# Store current values (these are now the widget values)
-st.session_state.selected_model_id = selected_model_id
-st.session_state.selected_model_name = selected_model_name
+# Update MongoDB when settings change
+if (selected_model_id != current_model_id or
+    max_tokens != current_max_tokens or
+    temperature != current_temperature):
+
+    success = settings_manager.update_ai_model_settings(
+        selected_model_id,
+        selected_model_name,
+        max_tokens,
+        temperature
+    )
+    if success:
+        st.sidebar.success("✅ Settings saved to database")
+    else:
+        st.sidebar.error("❌ Failed to save settings")
 
 st.sidebar.success(f"✅ Using: **{selected_model_name}**")
 st.sidebar.write(f"Model ID: `{selected_model_id}`")
+
+# Initialize system prompts in session state
+if "system_prompts" not in st.session_state:
+    st.session_state.system_prompts = {
+        "incident_triage": "You are an expert ITSM analyst specializing in incident classification and priority assessment. You have deep knowledge of IT infrastructure, business impact analysis, and service level agreements.",
+        "kb_generation": "You are a technical documentation specialist with expertise in creating clear, actionable knowledge base articles. You excel at transforming incident resolution patterns into structured, searchable documentation.",
+        "agent_assignment": "You are an ITSM resource allocation expert with deep understanding of skill matching, workload balancing, and performance optimization for technical support teams."
+    }
+
 
 # Debug section
 if st.sidebar.checkbox("🔍 Show Debug Info"):
@@ -145,7 +168,23 @@ tab1, tab2, tab3, tab4 = st.tabs(["🎯 UC-02: Incident Triage", "📚 UC-21: KB
 with tab1:
     st.subheader("🎯 UC-02: AI-Powered Incident Triage")
     st.write("Automatically classify incident priority using AI analysis of title and description.")
-    
+
+    # System prompt for this use case
+    st.write("**System Prompt:**")
+    current_triage_prompt = settings_manager.get_setting("system_prompts.incident_triage",
+        "You are an expert ITSM analyst specializing in incident classification and priority assessment.")
+
+    new_triage_prompt = st.text_area(
+        "Define the AI's role and expertise for incident triage:",
+        value=current_triage_prompt,
+        height=100,
+        key="system_prompt_triage"
+    )
+
+    # Update MongoDB if prompt changed
+    if new_triage_prompt != current_triage_prompt:
+        settings_manager.update_system_prompt("incident_triage", new_triage_prompt)
+
     col1, col2 = st.columns([1, 1])
     
     with col1:
@@ -175,46 +214,46 @@ with tab1:
         
         if st.button("🎯 Classify Priority", type="primary"):
             if incident_title and incident_description:
-                with st.spinner(f"AI is analyzing the incident using {st.session_state.selected_model_name}..."):
-                    # Use global model settings
-                        prompt = f"""
-                        You are an ITSM expert. Analyze this incident and determine its priority level.
+                with st.spinner(f"AI is analyzing the incident using {selected_model_name}..."):
+                    # Use global model settings and system prompt
+                    prompt = f"""Analyze this incident and determine its priority level.
 
-                        Incident Title: {incident_title}
-                        Incident Description: {incident_description}
+                    Incident Title: {incident_title}
+                    Incident Description: {incident_description}
 
-                        Priority Levels:
-                        - P1: Critical - System down, major business impact
-                        - P2: High - Significant impact, workaround available
-                        - P3: Medium - Moderate impact, standard response
-                        - P4: Low - Minor impact, can be scheduled
+                    Priority Levels:
+                    - P1: Critical - System down, major business impact
+                    - P2: High - Significant impact, workaround available
+                    - P3: Medium - Moderate impact, standard response
+                    - P4: Low - Minor impact, can be scheduled
 
-                        Respond with:
-                        Priority: [P1/P2/P3/P4]
-                        Reasoning: [Brief explanation]
-                        """
+                    Respond with:
+                    Priority: [P1/P2/P3/P4]
+                    Reasoning: [Brief explanation]
+                    """
 
-                        response = bedrock_client.invoke_model(
-                            prompt,
-                            st.session_state.selected_model_id,
-                            min(max_tokens, 300),
-                            temperature
-                        )
+                    response = bedrock_client.invoke_model(
+                        prompt,
+                        selected_model_id,
+                        min(max_tokens, 300),
+                        temperature,
+                        system_prompt=settings_manager.get_setting("system_prompts.incident_triage")
+                    )
 
-                        if response:
-                            lines = response.split('\n')
-                            priority = "P3"  # Default
-                            reasoning = "Unable to determine"
+                    if response:
+                        lines = response.split('\n')
+                        priority = "P3"  # Default
+                        reasoning = "Unable to determine"
 
-                            for line in lines:
-                                if line.startswith('Priority:'):
-                                    priority = line.split(':')[1].strip()
-                                elif line.startswith('Reasoning:'):
-                                    reasoning = line.split(':', 1)[1].strip()
+                        for line in lines:
+                            if line.startswith('Priority:'):
+                                priority = line.split(':')[1].strip()
+                            elif line.startswith('Reasoning:'):
+                                reasoning = line.split(':', 1)[1].strip()
 
-                            result = {"priority": priority, "reasoning": reasoning}
-                        else:
-                            result = {"priority": "P3", "reasoning": "AI classification failed"}
+                        result = {"priority": priority, "reasoning": reasoning}
+                    else:
+                        result = {"priority": "P3", "reasoning": "AI classification failed"}
                 
                 st.success(f"**Predicted Priority: {result['priority']}**")
                 st.write(f"**Reasoning:** {result['reasoning']}")
@@ -244,8 +283,7 @@ with tab1:
                     actual_priority = incident.get('true_priority', 'Unknown')
                     
                     with st.spinner(f"Analyzing: {title[:30]}..."):
-                        prompt = f"""
-                        You are an ITSM expert. Analyze this incident and determine its priority level.
+                        prompt = f"""Analyze this incident and determine its priority level.
 
                         Incident Title: {title}
                         Incident Description: {desc}
@@ -263,9 +301,10 @@ with tab1:
 
                         response = bedrock_client.invoke_model(
                             prompt,
-                            st.session_state.selected_model_id,
+                            selected_model_id,
                             min(max_tokens, 200),
-                            temperature
+                            temperature,
+                            system_prompt=settings_manager.get_setting("system_prompts.incident_triage")
                         )
 
                         if response:
@@ -291,7 +330,23 @@ with tab1:
 with tab2:
     st.subheader("📚 UC-21: AI-Generated Knowledge Base Articles")
     st.write("Generate KB articles from clusters of similar incidents.")
-    
+
+    # System prompt for this use case
+    st.write("**System Prompt:**")
+    current_kb_prompt = settings_manager.get_setting("system_prompts.kb_generation",
+        "You are a technical documentation specialist with expertise in creating clear, actionable knowledge base articles.")
+
+    new_kb_prompt = st.text_area(
+        "Define the AI's role and expertise for KB article generation:",
+        value=current_kb_prompt,
+        height=100,
+        key="system_prompt_kb"
+    )
+
+    # Update MongoDB if prompt changed
+    if new_kb_prompt != current_kb_prompt:
+        settings_manager.update_system_prompt("kb_generation", new_kb_prompt)
+
     incidents = dfs.get("incidents_resolved.csv", pd.DataFrame())
     
     if not incidents.empty:
@@ -318,7 +373,7 @@ with tab2:
                     if st.button("📝 Generate KB Article", type="primary"):
                         incident_cluster = category_incidents.head(5).to_dict('records')
                         
-                        with st.spinner(f"AI is generating KB article using {st.session_state.selected_model_name}..."):
+                        with st.spinner(f"AI is generating KB article using {selected_model_name}..."):
                             # Prepare incident summaries
                             incident_summaries = []
                             for incident in incident_cluster[:5]:  # Limit to 5 incidents
@@ -329,10 +384,7 @@ with tab2:
 
                             incidents_text = '\n'.join(incident_summaries)
 
-                            prompt = f"""
-                            You are a technical writer creating knowledge base articles for IT support.
-
-                            Based on these similar incidents, create a comprehensive KB article:
+                            prompt = f"""Based on these similar incidents, create a comprehensive KB article:
 
                             {incidents_text}
 
@@ -351,9 +403,10 @@ with tab2:
 
                             response = bedrock_client.invoke_model(
                                 prompt,
-                                st.session_state.selected_model_id,
+                                selected_model_id,
                                 min(max_tokens, 1000),
-                                temperature
+                                temperature,
+                                system_prompt=settings_manager.get_setting("system_prompts.kb_generation")
                             )
 
                             if response:
@@ -400,7 +453,23 @@ with tab2:
 with tab3:
     st.subheader("👥 UC-31: AI-Powered Agent Assignment")
     st.write("Intelligently match incidents to the best available agents based on skills, capacity, and performance.")
-    
+
+    # System prompt for this use case
+    st.write("**System Prompt:**")
+    current_agent_prompt = settings_manager.get_setting("system_prompts.agent_assignment",
+        "You are an ITSM resource allocation expert with deep understanding of skill matching, workload balancing, and performance optimization.")
+
+    new_agent_prompt = st.text_area(
+        "Define the AI's role and expertise for agent assignment:",
+        value=current_agent_prompt,
+        height=100,
+        key="system_prompt_agent"
+    )
+
+    # Update MongoDB if prompt changed
+    if new_agent_prompt != current_agent_prompt:
+        settings_manager.update_system_prompt("agent_assignment", new_agent_prompt)
+
     workload = dfs.get("workload_queue.csv", pd.DataFrame())
     agents = dfs.get("users_agents.csv", pd.DataFrame())
     agent_skills = dfs.get("agent_skills.csv", pd.DataFrame())
@@ -436,7 +505,7 @@ with tab3:
                 ]
                 
                 if st.button("🎯 Find Best Agent", type="primary"):
-                    with st.spinner(f"AI is analyzing agent assignments using {st.session_state.selected_model_name}..."):
+                    with st.spinner(f"AI is analyzing agent assignments using {selected_model_name}..."):
                         # Prepare agent information
                         agent_info = []
                         for agent in mock_agents[:10]:  # Limit to 10 agents
@@ -449,8 +518,7 @@ with tab3:
 
                         agents_text = '\n'.join(agent_info)
 
-                        prompt = f"""
-                        You are an ITSM assignment specialist. Recommend the best agent for this incident.
+                        prompt = f"""Recommend the best agent for this incident.
 
                         Incident Details:
                         - Title: {selected_incident.get('description', 'No title')}
@@ -475,9 +543,10 @@ with tab3:
 
                         response = bedrock_client.invoke_model(
                             prompt,
-                            st.session_state.selected_model_id,
+                            selected_model_id,
                             min(max_tokens, 400),
-                            temperature
+                            temperature,
+                            system_prompt=settings_manager.get_setting("system_prompts.agent_assignment")
                         )
 
                         if response:
@@ -525,8 +594,8 @@ with tab4:
 
     with col1:
         st.write("**Current Configuration:**")
-        st.info(f"**Model:** {st.session_state.selected_model_name}")
-        st.info(f"**Model ID:** `{st.session_state.selected_model_id}`")
+        st.info(f"**Model:** {selected_model_name}")
+        st.info(f"**Model ID:** `{selected_model_id}`")
         st.info(f"**Max Tokens:** {max_tokens}")
         st.info(f"**Temperature:** {temperature}")
 
@@ -538,13 +607,25 @@ with tab4:
             help="Use this to test your current model configuration"
         )
 
+        # Optional system prompt for testing
+        use_system_prompt = st.checkbox("Use system prompt for testing")
+        test_system_prompt = None
+        if use_system_prompt:
+            test_system_prompt = st.text_area(
+                "Test system prompt:",
+                value="You are a helpful AI assistant specializing in IT Service Management.",
+                height=80,
+                help="Optional system prompt to test with"
+            )
+
         if st.button("🧪 Test Current Configuration", type="primary"):
-            with st.spinner(f"Testing {st.session_state.selected_model_name}..."):
+            with st.spinner(f"Testing {selected_model_name}..."):
                 response = bedrock_client.invoke_model(
                     custom_prompt,
-                    st.session_state.selected_model_id,
+                    selected_model_id,
                     max_tokens,
-                    temperature
+                    temperature,
+                    system_prompt=test_system_prompt if use_system_prompt else None
                 )
 
             if response:
@@ -555,7 +636,7 @@ with tab4:
                     # Show test details
                     st.write("---")
                     st.write("**Test Details:**")
-                    st.write(f"- Model: {st.session_state.selected_model_name}")
+                    st.write(f"- Model: {selected_model_name}")
                     st.write(f"- Tokens: {max_tokens}")
                     st.write(f"- Temperature: {temperature}")
                     st.write(f"- Response Length: {len(response)} characters")
@@ -589,7 +670,7 @@ with tab4:
                     max_tokens_info = "Up to 2,000 tokens"
 
                 # Highlight current model
-                if model_id == st.session_state.selected_model_id:
+                if model_id == selected_model_id:
                     st.success(f"**✅ {model_name}** (Currently Selected)")
                     st.write(f"   {capabilities}")
                     st.write(f"   {max_tokens_info}")
