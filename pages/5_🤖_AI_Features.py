@@ -399,30 +399,38 @@ with tab2:
                 filter_col1, filter_col2 = st.columns([1, 1])
                 
                 with filter_col1:
-                    # Priority filter
-                    if 'true_priority' in resolved_incidents.columns:
-                        priorities = ['All'] + sorted(resolved_incidents['true_priority'].dropna().unique().tolist())
+                    # Priority filter - handle both MongoDB and CSV column names
+                    priority_col = 'priority' if 'priority' in resolved_incidents.columns else 'true_priority'
+                    if priority_col in resolved_incidents.columns:
+                        priorities = ['All'] + sorted(resolved_incidents[priority_col].dropna().unique().tolist())
                         selected_priority = st.selectbox("Filter by Priority:", priorities)
                         
                         if selected_priority != 'All':
-                            resolved_incidents = resolved_incidents[resolved_incidents['true_priority'] == selected_priority]
+                            resolved_incidents = resolved_incidents[resolved_incidents[priority_col] == selected_priority]
+                    else:
+                        selected_priority = 'All'
                 
                 with filter_col2:
-                    # Category filter
-                    if 'category_name' in resolved_incidents.columns:
-                        categories = ['All'] + sorted(resolved_incidents['category_name'].dropna().unique().tolist())
+                    # Category filter - handle both MongoDB and CSV column names
+                    category_col = 'category' if 'category' in resolved_incidents.columns else 'category_id'
+                    if category_col in resolved_incidents.columns:
+                        categories = ['All'] + sorted(resolved_incidents[category_col].dropna().unique().tolist())
                         selected_category = st.selectbox("Filter by Category:", categories)
                         
                         if selected_category != 'All':
-                            resolved_incidents = resolved_incidents[resolved_incidents['category_name'] == selected_category]
+                            resolved_incidents = resolved_incidents[resolved_incidents[category_col] == selected_category]
+                    else:
+                        selected_category = 'All'
                 
-                # Ground truth cluster filter (for similar incidents)
+                # Ground truth cluster filter (for similar incidents) - only available in CSV data
                 if 'ground_truth_cluster' in resolved_incidents.columns:
                     clusters = ['All'] + sorted(resolved_incidents['ground_truth_cluster'].dropna().unique().tolist())
                     selected_cluster = st.selectbox("Filter by Issue Type:", clusters, help="Groups similar incidents together")
                     
                     if selected_cluster != 'All':
                         resolved_incidents = resolved_incidents[resolved_incidents['ground_truth_cluster'] == selected_cluster]
+                else:
+                    selected_cluster = 'All'
                 
                 st.write(f"**Filtered Results: {len(resolved_incidents)} incidents**")
                 
@@ -432,7 +440,8 @@ with tab2:
                     sample_incidents = resolved_incidents.head(5)
                     for idx, incident in sample_incidents.iterrows():
                         st.write(f"- **{incident.get('short_description', 'No description')}**")
-                        st.write(f"  Priority: {incident.get('true_priority', 'Unknown')} | Resolution: {incident.get('resolution_notes', 'No notes')[:50]}...")
+                        priority = incident.get('priority', incident.get('true_priority', 'Unknown'))
+                        st.write(f"  Priority: {priority} | Resolution: {incident.get('resolution_notes', 'No notes')[:50]}...")
                     
                     if len(resolved_incidents) > 5:
                         st.write(f"... and {len(resolved_incidents) - 5} more incidents")
@@ -599,8 +608,9 @@ with tab2:
                     # Show statistics about resolved incidents
                     st.write("**Resolved Incidents Overview:**")
                     
-                    if 'true_priority' in resolved_incidents.columns:
-                        priority_counts = resolved_incidents['true_priority'].value_counts()
+                    priority_col = 'priority' if 'priority' in resolved_incidents.columns else 'true_priority'
+                    if priority_col in resolved_incidents.columns:
+                        priority_counts = resolved_incidents[priority_col].value_counts()
                         st.write("**By Priority:**")
                         for priority, count in priority_counts.items():
                             st.write(f"- {priority}: {count} incidents")
