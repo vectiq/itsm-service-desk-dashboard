@@ -198,9 +198,15 @@ with tab1:
         key="system_prompt_triage"
     )
 
-    # Update MongoDB if prompt changed
-    if new_triage_prompt != current_triage_prompt:
-        settings_manager.update_system_prompt("incident_triage", new_triage_prompt)
+    # Add save button for system prompt
+    col_prompt1, col_prompt2 = st.columns([3, 1])
+    with col_prompt2:
+        if st.button("💾 Save Prompt", key="save_triage_prompt", help="Save system prompt to MongoDB"):
+            if settings_manager.update_system_prompt("incident_triage", new_triage_prompt):
+                st.success("✅ System prompt saved!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to save prompt")
 
     col1, col2 = st.columns([1, 1])
     
@@ -360,9 +366,15 @@ with tab2:
         key="system_prompt_kb"
     )
 
-    # Update MongoDB if prompt changed
-    if new_kb_prompt != current_kb_prompt:
-        settings_manager.update_system_prompt("kb_generation", new_kb_prompt)
+    # Add save button for system prompt
+    col_prompt1, col_prompt2 = st.columns([3, 1])
+    with col_prompt2:
+        if st.button("💾 Save Prompt", key="save_kb_prompt", help="Save system prompt to MongoDB"):
+            if settings_manager.update_system_prompt("kb_generation", new_kb_prompt):
+                st.success("✅ System prompt saved!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to save prompt")
 
     incidents = data_service.get_incidents()
     
@@ -483,9 +495,15 @@ with tab3:
         key="system_prompt_agent"
     )
 
-    # Update MongoDB if prompt changed
-    if new_agent_prompt != current_agent_prompt:
-        settings_manager.update_system_prompt("agent_assignment", new_agent_prompt)
+    # Add save button for system prompt
+    col_prompt1, col_prompt2 = st.columns([3, 1])
+    with col_prompt2:
+        if st.button("💾 Save Prompt", key="save_agent_prompt", help="Save system prompt to MongoDB"):
+            if settings_manager.update_system_prompt("agent_assignment", new_agent_prompt):
+                st.success("✅ System prompt saved!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to save prompt")
 
     workload = data_service.get_workload()
     agents = data_service.get_agents()
