@@ -577,6 +577,7 @@ with tab2:
                             'prevention': article['prevention'],
                             'tags': article['tags'],
                             'source_incidents': len(incident_cluster),
+                            'ai_generated': True,
                             'filters': {
                                 'priority': selected_priority if selected_priority != 'All' else None,
                                 'category': selected_category if selected_category != 'All' else None,

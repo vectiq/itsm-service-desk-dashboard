@@ -82,7 +82,7 @@ with tab1:
             filtered_articles = filtered_articles[filtered_articles['publish_state'] == selected_state]
         
         # Show article counts
-        ai_count = len([a for _, a in filtered_articles.iterrows() if 'problem' in a and pd.notna(a.get('problem'))])
+        ai_count = len([a for _, a in filtered_articles.iterrows() if a.get('ai_generated', False) or ('problem' in a and pd.notna(a.get('problem')))])
         standard_count = len(filtered_articles) - ai_count
         st.write(f"Showing {len(filtered_articles):,} articles ({ai_count} AI-generated, {standard_count} standard) of {len(kb_articles):,} total")
         
@@ -90,10 +90,16 @@ with tab1:
         if not filtered_articles.empty:
             for idx, article in filtered_articles.iterrows():
                 # Check if this is an AI-generated article
-                is_ai_generated = 'problem' in article and pd.notna(article.get('problem'))
-                article_type = "🤖 AI-Generated" if is_ai_generated else "📄 Standard"
+                is_ai_generated = article.get('ai_generated', False) or ('problem' in article and pd.notna(article.get('problem')))
                 
-                with st.expander(f"{article_type}: {article.get('title', 'Untitled Article')}"):
+                # Create title with tag
+                title = article.get('title', 'Untitled Article')
+                if is_ai_generated:
+                    title_display = f"{title} 🤖"
+                else:
+                    title_display = title
+                
+                with st.expander(title_display):
                     if is_ai_generated:
                         # Display AI-generated article format
                         st.markdown(f"### {article.get('title', 'Untitled Article')}")
