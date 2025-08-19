@@ -9,7 +9,7 @@ import os
 
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.data_loader import ensure_data_loaded
+from utils.data_service import data_service
 from utils.bedrock_client import BedrockClient
 from utils.settings_manager import settings_manager
 
@@ -19,121 +19,22 @@ st.title("🎫 Incidents Dashboard")
 # Initialize bedrock client
 bedrock_client = BedrockClient()
 
-# Ensure data is loaded
-dfs = ensure_data_loaded()
+# Show data source info
+data_source_info = data_service.get_data_source_info()
+st.sidebar.info(f"**Data Source**: {data_source_info['source']}\n**Status**: {data_source_info['status']}")
 
-# Get all related data with proper relationships
-incidents = dfs.get("incidents_resolved.csv", pd.DataFrame())
-workload = dfs.get("workload_queue.csv", pd.DataFrame())
-categories = dfs.get("category_tree.csv", pd.DataFrame())
-services = dfs.get("services_catalog.csv", pd.DataFrame())
-cmdb_ci = dfs.get("cmdb_ci.csv", pd.DataFrame())
-assignment_groups = dfs.get("assignment_groups.csv", pd.DataFrame())
-users_agents = dfs.get("users_agents.csv", pd.DataFrame())
-priority_matrix = dfs.get("priority_matrix.csv", pd.DataFrame())
+# Load incidents data from MongoDB or CSV
+incidents_df = data_service.get_incidents()
 
-# Enrich incidents with related data
-incidents_enriched = incidents.copy()
+# Check if we have incidents data
+if incidents_df.empty:
+    st.error("No incidents data available. Please check the Data Management page to ingest data.")
+    st.stop()
 
-# Join with services catalog
-if not services.empty and 'service_id' in incidents.columns and 'service_id' in services.columns:
-    service_cols = ['service_id', 'name']
-    if 'criticality' in services.columns:
-        service_cols.append('criticality')
-    incidents_enriched = incidents_enriched.merge(
-        services[service_cols].rename(columns={'name': 'service_name'}),
-        on='service_id', how='left'
-    )
+# Use the cleaned incidents data directly (already enriched with categories, services, etc.)
+incidents_enriched = incidents_df.copy()
 
-# Join with categories
-if not categories.empty and 'category_id' in incidents.columns and 'category_id' in categories.columns:
-    category_cols = ['category_id', 'name']
-    if 'parent_id' in categories.columns:
-        category_cols.append('parent_id')
-    if 'path' in categories.columns:
-        category_cols.append('path')
-    incidents_enriched = incidents_enriched.merge(
-        categories[category_cols].rename(columns={'name': 'category_name'}),
-        on='category_id', how='left'
-    )
-
-# Join with assignment groups
-if not assignment_groups.empty and 'true_assignment_group_id' in incidents.columns and 'group_id' in assignment_groups.columns:
-    group_cols = ['group_id', 'name']
-    if 'service' in assignment_groups.columns:
-        group_cols.append('service')
-    if 'queue_type' in assignment_groups.columns:
-        group_cols.append('queue_type')
-    incidents_enriched = incidents_enriched.merge(
-        assignment_groups[group_cols].rename(columns={'group_id': 'true_assignment_group_id', 'name': 'group_name'}),
-        on='true_assignment_group_id', how='left'
-    )
-
-# Join with CMDB CIs
-if not cmdb_ci.empty and 'ci_id' in incidents.columns and 'ci_id' in cmdb_ci.columns:
-    ci_cols = ['ci_id', 'name']
-    if 'class' in cmdb_ci.columns:
-        ci_cols.append('class')
-    if 'environment' in cmdb_ci.columns:
-        ci_cols.append('environment')
-    if 'status' in cmdb_ci.columns:
-        ci_cols.append('status')
-
-    incidents_enriched = incidents_enriched.merge(
-        cmdb_ci[ci_cols].rename(columns={'name': 'ci_name', 'class': 'ci_class'}),
-        on='ci_id', how='left'
-    )
-
-# Enrich workload queue with related data
-workload_enriched = workload.copy()
-
-# Join workload with services catalog
-if not services.empty and 'service_id' in workload.columns and 'service_id' in services.columns:
-    service_cols = ['service_id', 'name']
-    if 'criticality' in services.columns:
-        service_cols.append('criticality')
-    workload_enriched = workload_enriched.merge(
-        services[service_cols].rename(columns={'name': 'service_name'}),
-        on='service_id', how='left'
-    )
-
-# Join workload with categories
-if not categories.empty and 'category_id' in workload.columns and 'category_id' in categories.columns:
-    category_cols = ['category_id', 'name']
-    if 'parent_id' in categories.columns:
-        category_cols.append('parent_id')
-    if 'path' in categories.columns:
-        category_cols.append('path')
-    workload_enriched = workload_enriched.merge(
-        categories[category_cols].rename(columns={'name': 'category_name'}),
-        on='category_id', how='left'
-    )
-
-# Join workload with assignment groups (if applicable)
-if not assignment_groups.empty and 'assignment_group_id' in workload.columns and 'group_id' in assignment_groups.columns:
-    group_cols = ['group_id', 'name']
-    if 'service' in assignment_groups.columns:
-        group_cols.append('service')
-    if 'queue_type' in assignment_groups.columns:
-        group_cols.append('queue_type')
-    workload_enriched = workload_enriched.merge(
-        assignment_groups[group_cols].rename(columns={'group_id': 'assignment_group_id', 'name': 'group_name'}),
-        on='assignment_group_id', how='left'
-    )
-
-# Join workload with skills catalog
-skills = dfs.get("skills_catalog.csv", pd.DataFrame())
-if not skills.empty and 'required_skills' in workload.columns and 'skill_id' in skills.columns:
-    skill_cols = ['skill_id', 'skill_name']
-    if 'domain' in skills.columns:
-        skill_cols.append('domain')
-
-    workload_enriched = workload_enriched.merge(
-        skills[skill_cols].rename(columns={'skill_id': 'required_skills', 'skill_name': 'required_skill_name'}),
-        on='required_skills', how='left'
-    )
-
-if incidents.empty:
+if incidents_enriched.empty:
     st.error("No incidents data available")
     st.stop()
 

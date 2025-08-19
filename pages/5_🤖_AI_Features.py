@@ -5,15 +5,16 @@ import os
 
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.data_loader import ensure_data_loaded
+from utils.data_service import data_service
 from utils.bedrock_client import bedrock_client
 from utils.settings_manager import settings_manager
 
 st.set_page_config(page_title="AI Features", page_icon="🤖", layout="wide")
 st.title("🤖 AI-Powered ITSM Features")
 
-# Ensure data is loaded
-dfs = ensure_data_loaded()
+# Show data source info
+data_source_info = data_service.get_data_source_info()
+st.sidebar.info(f"**Data Source**: {data_source_info['source']}\n**Status**: {data_source_info['status']}")
 
 # Check if Bedrock is available
 if not bedrock_client.is_available():
@@ -263,7 +264,7 @@ with tab1:
     with col2:
         st.write("**Historical Incident Analysis:**")
         
-        incidents = dfs.get("incidents_resolved.csv", pd.DataFrame())
+        incidents = data_service.get_incidents()
         if not incidents.empty:
             # Show priority distribution
             if 'true_priority' in incidents.columns:
@@ -347,7 +348,7 @@ with tab2:
     if new_kb_prompt != current_kb_prompt:
         settings_manager.update_system_prompt("kb_generation", new_kb_prompt)
 
-    incidents = dfs.get("incidents_resolved.csv", pd.DataFrame())
+    incidents = data_service.get_incidents()
     
     if not incidents.empty:
         col1, col2 = st.columns([1, 1])
@@ -470,10 +471,11 @@ with tab3:
     if new_agent_prompt != current_agent_prompt:
         settings_manager.update_system_prompt("agent_assignment", new_agent_prompt)
 
-    workload = dfs.get("workload_queue.csv", pd.DataFrame())
-    agents = dfs.get("users_agents.csv", pd.DataFrame())
-    agent_skills = dfs.get("agent_skills.csv", pd.DataFrame())
-    skills_catalog = dfs.get("skills_catalog.csv", pd.DataFrame())
+    workload = data_service.get_workload()
+    agents = data_service.get_agents()
+    # Note: agent_skills and skills_catalog not yet in MongoDB, using empty DataFrames
+    agent_skills = pd.DataFrame()
+    skills_catalog = pd.DataFrame()
     
     if not workload.empty and not agents.empty:
         col1, col2 = st.columns([1, 1])
