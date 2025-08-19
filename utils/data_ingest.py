@@ -405,6 +405,9 @@ class DataIngestManager:
 
         except Exception as e:
             logger.error(f"Failed to generate AI incidents: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return False
 
     def _generate_ai_incidents_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None) -> List[Dict]:
@@ -523,14 +526,28 @@ Return ONLY a JSON array with no additional text."""
 
             logger.debug(f"Received response length: {len(response)} characters")
 
-            # Parse JSON response
+            # Parse JSON response - handle markdown code blocks
             import json
+            import re
             try:
-                incidents_data = json.loads(response)
+                # Clean the response - remove markdown code blocks if present
+                cleaned_response = response.strip()
+
+                # Remove ```json and ``` markers if present
+                if cleaned_response.startswith('```json'):
+                    cleaned_response = re.sub(r'^```json\s*', '', cleaned_response)
+                if cleaned_response.startswith('```'):
+                    cleaned_response = re.sub(r'^```\s*', '', cleaned_response)
+                if cleaned_response.endswith('```'):
+                    cleaned_response = re.sub(r'\s*```$', '', cleaned_response)
+
+                logger.debug(f"Cleaned response preview: {cleaned_response[:200]}...")
+
+                incidents_data = json.loads(cleaned_response)
                 if not isinstance(incidents_data, list):
                     error_msg = f"Response is not a JSON array, got: {type(incidents_data)}"
                     logger.error(error_msg)
-                    logger.error(f"Response content: {response[:1000]}...")
+                    logger.error(f"Cleaned response content: {cleaned_response[:1000]}...")
                     raise Exception(error_msg)
 
                 logger.info(f"Successfully parsed {len(incidents_data)} incidents from AI response")
@@ -550,8 +567,9 @@ Return ONLY a JSON array with no additional text."""
             except json.JSONDecodeError as e:
                 error_msg = f"Failed to parse JSON response: {str(e)}"
                 logger.error(error_msg)
-                logger.error(f"Response was: {response[:1000]}...")
-                raise Exception(f"{error_msg}. Response preview: {response[:200]}...")
+                logger.error(f"Original response was: {response[:1000]}...")
+                logger.error(f"Cleaned response was: {cleaned_response[:1000]}...")
+                raise Exception(f"{error_msg}. Cleaned response preview: {cleaned_response[:200]}...")
 
         except Exception as e:
             error_msg = f"Error in AI batch generation: {str(e)}"

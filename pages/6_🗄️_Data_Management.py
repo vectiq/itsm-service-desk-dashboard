@@ -39,12 +39,21 @@ if bedrock_client.is_available():
     st.write("**Model Configuration for Data Generation:**")
 
     # Get available models
-    available_models = bedrock_client.get_available_models()
-    model_options = {}
-    for model in available_models:
-        model_id = model.get('modelId', '')
-        model_name = model.get('modelName', model_id)
-        model_options[f"{model_name} ({model_id})"] = model_id
+    try:
+        available_models = bedrock_client.get_available_models()
+        model_options = {}
+        for model in available_models:
+            if isinstance(model, dict):
+                model_id = model.get('modelId', '')
+                model_name = model.get('modelName', model_id)
+            else:
+                # Handle case where model is a string
+                model_id = str(model)
+                model_name = model_id
+            model_options[f"{model_name} ({model_id})"] = model_id
+    except Exception as e:
+        st.error(f"Error loading models: {str(e)}")
+        model_options = {"Claude Sonnet (fallback)": "anthropic.claude-3-sonnet-20240229-v1:0"}
 
     # Model selection
     col1, col2 = st.columns([2, 1])
@@ -108,15 +117,34 @@ if bedrock_client.is_available():
                 if success:
                     st.success(f"✅ Generated {incident_count} AI-powered incidents!")
                     st.info("💡 Workload queue now shows unresolved unassigned incidents")
+                    st.info("🔄 Refresh the page to see the new data in the preview below")
                     if show_debug:
                         with debug_container:
                             st.success("🔍 Generation completed successfully!")
-                    st.rerun()
                 else:
                     st.error("❌ Failed to generate AI incidents")
                     if show_debug:
                         with debug_container:
                             st.error("🔍 Generation failed - check logs for details")
+
+                            # Try to get more specific error information
+                            st.subheader("🔍 Debug Console - Generation Failure")
+                            st.error("The generation function returned False, indicating failure.")
+                            st.info("Common causes:")
+                            st.write("• MongoDB connection issues")
+                            st.write("• AWS Bedrock API errors")
+                            st.write("• Model token limits exceeded")
+                            st.write("• Invalid model configuration")
+
+                            # Show current settings for debugging
+                            st.subheader("📋 Current Settings")
+                            st.write(f"**Model ID**: {selected_model_id}")
+                            st.write(f"**Max Tokens**: {max_tokens}")
+                            st.write(f"**Temperature**: {temperature}")
+                            st.write(f"**Incident Count**: {incident_count}")
+                            st.write(f"**Resolved Percentage**: {resolved_percentage}")
+                    else:
+                        st.info("Enable 'Show Debug Console' for detailed debugging information.")
 
             except Exception as e:
                 error_msg = str(e)
