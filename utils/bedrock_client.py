@@ -19,13 +19,20 @@ class BedrockClient:
 
     def __init__(self):
         """Initialize Bedrock client following AWS best practices"""
+        self._initialize_client()
+
+    def _initialize_client(self):
+        """Initialize or refresh the Bedrock client with current environment variables"""
+        # Reload environment variables to pick up changes
+        load_dotenv(override=True)
+
         self.region = os.getenv('AWS_REGION', 'us-east-1')
 
         # Get bearer token from environment (this contains the full auth info)
         self.bearer_token = os.getenv('AWS_BEARER_TOKEN_BEDROCK')
 
         if not self.bearer_token:
-            st.error("AWS_BEARER_TOKEN_BEDROCK not found in .env file")
+            logger.error("AWS_BEARER_TOKEN_BEDROCK not found in .env file")
             self.available = False
             return
 
@@ -112,6 +119,20 @@ class BedrockClient:
     def is_available(self) -> bool:
         """Check if Bedrock client is available"""
         return getattr(self, 'available', False)
+
+    def refresh_client(self) -> bool:
+        """Refresh the Bedrock client with updated environment variables"""
+        try:
+            logger.info("Refreshing Bedrock client with updated environment variables")
+            self._initialize_client()
+            return self.available
+        except Exception as e:
+            logger.error(f"Failed to refresh Bedrock client: {str(e)}")
+            return False
+
+    def get_current_region(self) -> str:
+        """Get the current AWS region"""
+        return getattr(self, 'region', 'unknown')
 
     def _list_foundation_models(self) -> List[Dict]:
         """
@@ -697,3 +718,9 @@ class BedrockClient:
 
 # Global instance
 bedrock_client = BedrockClient()
+
+def refresh_bedrock_client():
+    """Refresh the global bedrock client instance"""
+    global bedrock_client
+    bedrock_client = BedrockClient()
+    return bedrock_client.is_available()

@@ -129,7 +129,7 @@ with tab1:
 
     # Display filtered results
     total_incidents = len(filtered_incidents)
-    st.write(f"Showing {total_incidents:,} of {len(incidents):,} incidents")
+    st.write(f"Showing {total_incidents:,} of {len(incidents_enriched):,} incidents")
 
     # Enhanced display columns with enriched data - prefer names over IDs
     display_columns = []
@@ -197,24 +197,38 @@ with tab1:
 
             st.write(f"**Selected:** {selected_incident_id} - {selected_row.get('Title', 'No title')}")
 
-            # Action buttons in columns
-            action_cols = st.columns(4)
+            # Action buttons in a single panel
+            st.markdown("**Available Actions:**")
 
-            with action_cols[0]:
-                if st.button("👁️ View", key=f"view_{selected_incident_id}"):
+            # Create a container for better visual grouping
+            with st.container():
+                # Use columns for horizontal layout but keep them visually together
+                btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+
+                with btn_col1:
+                    view_clicked = st.button("👁️ View", key=f"view_{selected_incident_id}", use_container_width=True)
+
+                with btn_col2:
+                    edit_clicked = st.button("✏️ Edit", key=f"edit_{selected_incident_id}", use_container_width=True)
+
+                with btn_col3:
+                    delete_clicked = st.button("🗑️ Delete", key=f"delete_{selected_incident_id}", use_container_width=True)
+
+                with btn_col4:
+                    classify_clicked = st.button("🎯 Auto-Classify", key=f"classify_{selected_incident_id}", use_container_width=True)
+
+                # Handle button clicks
+                if view_clicked:
                     st.session_state[f"show_details_{selected_incident_id}"] = not st.session_state.get(f"show_details_{selected_incident_id}", False)
                     st.rerun()
 
-            with action_cols[1]:
-                if st.button("✏️ Edit", key=f"edit_{selected_incident_id}"):
+                if edit_clicked:
                     st.info("Edit functionality coming soon...")
 
-            with action_cols[2]:
-                if st.button("🗑️ Delete", key=f"delete_{selected_incident_id}"):
+                if delete_clicked:
                     st.warning(f"Delete {selected_incident_id} - Demo mode (no actual deletion)")
 
-            with action_cols[3]:
-                if st.button("🎯 Auto-Classify", key=f"classify_{selected_incident_id}"):
+                if classify_clicked:
                     # Get the incident data for classification
                     title = incident_data.get('short_description', '')
                     description = incident_data.get('description', '')
@@ -262,19 +276,86 @@ with tab1:
                                         )
 
                                         if response:
+                                            # Show raw response for debugging
+                                            with st.expander("🔍 Raw AI Response", expanded=False):
+                                                st.code(response)
+
+                                            # Parse response with improved logic
+                                            priority = "P3"  # Default
+                                            reasoning = "Unable to determine"  # Default
+
+                                            # Method 1: Look for Priority and Reasoning sections
                                             lines = response.split('\n')
-                                            priority = "P3"
-                                            reasoning = "Unable to determine"
+
+                                            # Find priority
+                                            for line in lines:
+                                                line = line.strip()
+                                                if line.startswith('Priority:'):
+                                                    priority = line.split(':', 1)[1].strip()
+                                                    break
+
+                                            # Find reasoning - look for "Reasoning:" and capture everything after it
+                                            reasoning_found = False
+                                            reasoning_lines = []
 
                                             for line in lines:
-                                                if line.startswith('Priority:'):
-                                                    priority = line.split(':')[1].strip()
-                                                elif line.startswith('Reasoning:'):
-                                                    reasoning = line.split(':', 1)[1].strip()
+                                                line = line.strip()
+                                                if line.startswith('Reasoning:'):
+                                                    reasoning_found = True
+                                                    # Get any text after "Reasoning:" on the same line
+                                                    after_colon = line.split(':', 1)[1].strip()
+                                                    if after_colon:
+                                                        reasoning_lines.append(after_colon)
+                                                elif reasoning_found and line:
+                                                    # Continue collecting reasoning lines until we hit another section or end
+                                                    if line.startswith(('Priority:', 'Confidence:', 'Summary:')):
+                                                        break
+                                                    reasoning_lines.append(line)
+
+                                            # Join reasoning lines
+                                            if reasoning_lines:
+                                                reasoning = '\n'.join(reasoning_lines).strip()
+
+                                            # Method 2: If still no reasoning, try alternative parsing
+                                            if reasoning == "Unable to determine":
+                                                # Look for text after "Reasoning:" in the entire response
+                                                if 'Reasoning:' in response:
+                                                    parts = response.split('Reasoning:', 1)
+                                                    if len(parts) > 1:
+                                                        after_reasoning = parts[1].strip()
+                                                        # Take everything until next section or end
+                                                        next_section = None
+                                                        for section in ['Priority:', 'Confidence:', 'Summary:']:
+                                                            if section in after_reasoning:
+                                                                idx = after_reasoning.find(section)
+                                                                if next_section is None or idx < after_reasoning.find(next_section):
+                                                                    next_section = section
+
+                                                        if next_section:
+                                                            reasoning = after_reasoning.split(next_section)[0].strip()
+                                                        else:
+                                                            reasoning = after_reasoning.strip()
+
+                                            # Method 3: If still no reasoning, use everything after priority
+                                            if reasoning == "Unable to determine" and 'Priority:' in response:
+                                                parts = response.split('Priority:', 1)
+                                                if len(parts) > 1:
+                                                    after_priority = parts[1]
+                                                    # Skip the priority line and use the rest
+                                                    priority_lines = after_priority.split('\n')
+                                                    if len(priority_lines) > 1:
+                                                        reasoning = '\n'.join(priority_lines[1:]).strip()
+
+                                            # Clean up priority (extract just P1, P2, P3, P4)
+                                            import re
+                                            priority_match = re.search(r'P[1-4]', priority.upper())
+                                            if priority_match:
+                                                priority = priority_match.group()
 
                                             st.success(f"**AI Classification for {selected_incident_id}:**")
                                             st.write(f"**Predicted Priority:** {priority}")
-                                            st.write(f"**Reasoning:** {reasoning}")
+                                            st.markdown(f"**Reasoning:**")
+                                            st.markdown(reasoning)
 
                                             # Show the system prompt used
                                             with st.expander("🔍 Classification Details", expanded=False):
@@ -317,39 +398,39 @@ with tab2:
     
     with col1:
         # Priority distribution
-        if 'true_priority' in incidents.columns:
-            priority_counts = incidents['true_priority'].value_counts()
+        if 'true_priority' in incidents_enriched.columns:
+            priority_counts = incidents_enriched['true_priority'].value_counts()
             fig = px.pie(values=priority_counts.values, names=priority_counts.index,
                        title='Incident Priority Distribution')
             st.plotly_chart(fig, use_container_width=True)
-        
+
         # Resolution time distribution
-        if 'time_to_resolve_mins' in incidents.columns:
-            fig = px.histogram(incidents, x='time_to_resolve_mins', nbins=30,
+        if 'time_to_resolve_mins' in incidents_enriched.columns:
+            fig = px.histogram(incidents_enriched, x='time_to_resolve_mins', nbins=30,
                              title='Resolution Time Distribution (Minutes)')
             st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         # Category distribution
-        if 'category_id' in incidents.columns:
-            cat_counts = incidents['category_id'].value_counts().head(10)
+        if 'category_id' in incidents_enriched.columns:
+            cat_counts = incidents_enriched['category_id'].value_counts().head(10)
             fig = px.bar(x=cat_counts.values, y=cat_counts.index, orientation='h',
                        title='Top 10 Incident Categories',
                        labels={'x': 'Count', 'y': 'Category'})
             st.plotly_chart(fig, use_container_width=True)
-        
+
         # Channel distribution
-        if 'channel' in incidents.columns:
-            channel_counts = incidents['channel'].value_counts()
+        if 'channel' in incidents_enriched.columns:
+            channel_counts = incidents_enriched['channel'].value_counts()
             fig = px.bar(x=channel_counts.index, y=channel_counts.values,
                        title='Incidents by Channel',
                        labels={'x': 'Channel', 'y': 'Count'})
             st.plotly_chart(fig, use_container_width=True)
     
     # Resolution codes analysis
-    if 'resolution_code' in incidents.columns:
+    if 'resolution_code' in incidents_enriched.columns:
         st.subheader("Resolution Analysis")
-        resolution_counts = incidents['resolution_code'].value_counts().head(10)
+        resolution_counts = incidents_enriched['resolution_code'].value_counts().head(10)
         fig = px.bar(x=resolution_counts.index, y=resolution_counts.values,
                    title='Top 10 Resolution Codes',
                    labels={'x': 'Resolution Code', 'y': 'Count'})
@@ -358,7 +439,10 @@ with tab2:
 
 with tab3:
     st.subheader("Current Workload Queue")
-    
+
+    # Load workload data
+    workload = data_service.get_workload()
+
     if not workload.empty:
         # Queue metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -399,18 +483,18 @@ with tab3:
         # Build display columns list
         queue_display_columns = []
         for col in preferred_queue_columns:
-            if col in workload_enriched.columns:
+            if col in workload.columns:
                 queue_display_columns.append(col)
 
         # Add any other important columns that aren't IDs
         additional_queue_columns = ['description', 'urgency', 'impact', 'created_on']
         for col in additional_queue_columns:
-            if col in workload_enriched.columns and col not in queue_display_columns:
+            if col in workload.columns and col not in queue_display_columns:
                 queue_display_columns.append(col)
 
         if queue_display_columns:
             # Rename columns for better display
-            queue_display_df = workload_enriched[queue_display_columns].copy()
+            queue_display_df = workload[queue_display_columns].copy()
 
             # Sort by priority (P1 highest, P2, P3, P4, P5 lowest)
             if 'priority' in queue_display_df.columns:

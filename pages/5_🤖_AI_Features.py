@@ -6,7 +6,7 @@ import os
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_service import data_service
-from utils.bedrock_client import bedrock_client
+from utils.bedrock_client import bedrock_client, refresh_bedrock_client
 from utils.settings_manager import settings_manager
 
 st.set_page_config(page_title="AI Features", page_icon="🤖", layout="wide")
@@ -31,6 +31,19 @@ if not settings_manager.is_available():
 
 # Admin settings in sidebar
 st.sidebar.header("⚙️ AI Model Configuration")
+
+# Show current region and refresh button
+current_region = bedrock_client.get_current_region()
+st.sidebar.info(f"**AWS Region**: {current_region}")
+
+if st.sidebar.button("🔄 Refresh Models", help="Reload models after changing .env file"):
+    with st.spinner("Refreshing Bedrock client..."):
+        success = refresh_bedrock_client()
+        if success:
+            st.sidebar.success("✅ Models refreshed successfully!")
+            st.rerun()
+        else:
+            st.sidebar.error("❌ Failed to refresh models")
 
 # Get available models
 available_models = bedrock_client.get_available_models()
@@ -108,6 +121,9 @@ if (selected_model_id != current_model_id or
 
 st.sidebar.success(f"✅ Using: **{selected_model_name}**")
 st.sidebar.write(f"Model ID: `{selected_model_id}`")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("💡 **Tip**: If you change your AWS region in the .env file, click 'Refresh Models' to reload the available models for the new region.")
 
 # Initialize system prompts in session state
 if "system_prompts" not in st.session_state:
