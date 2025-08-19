@@ -95,25 +95,39 @@ class DataService:
             return self._get_csv_agents(limit)
     
     def get_workload(self, limit: Optional[int] = None) -> pd.DataFrame:
-        """Get workload data from MongoDB or CSV"""
+        """Get current workload (unresolved unassigned incidents) from incidents collection"""
         try:
             # Refresh MongoDB status
             self._refresh_mongodb_status()
 
             if self.use_mongodb and self.mongodb_has_data:
-                # Get from MongoDB
-                workload = data_ingest_manager.get_workload(limit=limit)
-                if workload:
-                    df = pd.DataFrame(workload)
+                # Get unresolved incidents from MongoDB incidents collection
+                incidents = data_ingest_manager.get_incidents(limit=None)  # Get all first, then filter
+                if incidents:
+                    df = pd.DataFrame(incidents)
                     if '_id' in df.columns:
                         df = df.drop('_id', axis=1)
-                    logger.info(f"Loaded {len(df)} workload items from MongoDB")
+
+                    # Filter for unresolved incidents only
+                    if 'status' in df.columns:
+                        unresolved_statuses = ['Open', 'In Progress', 'Assigned']
+                        df = df[df['status'].isin(unresolved_statuses)]
+
+                        # Further filter for unassigned incidents for the queue
+                        if 'assigned_to' in df.columns:
+                            df = df[(df['assigned_to'].isna()) | (df['assigned_to'] == '')]
+
+                    # Apply limit after filtering
+                    if limit and len(df) > limit:
+                        df = df.head(limit)
+
+                    logger.info(f"Loaded {len(df)} unresolved unassigned incidents from MongoDB")
 
                     # Enrich with reference data
                     df = self._enrich_workload_data(df)
                     return df
                 else:
-                    logger.warning("No workload found in MongoDB, falling back to CSV")
+                    logger.warning("No incidents found in MongoDB, falling back to CSV")
 
             # Fallback to CSV
             return self._get_csv_workload(limit)
@@ -286,7 +300,7 @@ class DataService:
             return pd.DataFrame()
 
     def _enrich_workload_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Enrich workload data with reference data lookups"""
+        """Enrich workload data (unresolved incidents) with reference data lookups"""
         try:
             if df.empty:
                 return df
@@ -295,27 +309,19 @@ class DataService:
             if self.csv_data is None:
                 self.csv_data = ensure_data_loaded()
 
-            # Enrich with skill names
-            if 'required_skills' in df.columns and 'skills_catalog.csv' in self.csv_data:
-                skills_df = self.csv_data['skills_catalog.csv']
-                # Create skill lookup dictionary
-                skill_lookup = dict(zip(skills_df['skill_id'], skills_df['skill_name']))
-
-                # Add skill name column
-                df['required_skill_name'] = df['required_skills'].map(skill_lookup).fillna('Unknown Skill')
-                logger.info(f"Enriched workload with skill names for {len(df)} records")
-
             # Enrich with service names
             if 'service_id' in df.columns and 'services_catalog.csv' in self.csv_data:
                 services_df = self.csv_data['services_catalog.csv']
                 service_lookup = dict(zip(services_df['service_id'], services_df['service_name']))
                 df['service_name'] = df['service_id'].map(service_lookup).fillna('Unknown Service')
+                logger.info(f"Enriched workload with service names for {len(df)} records")
 
             # Enrich with category names
             if 'category_id' in df.columns and 'category_tree.csv' in self.csv_data:
                 categories_df = self.csv_data['category_tree.csv']
                 category_lookup = dict(zip(categories_df['category_id'], categories_df['category_name']))
                 df['category_name'] = df['category_id'].map(category_lookup).fillna('Unknown Category')
+                logger.info(f"Enriched workload with category names for {len(df)} records")
 
             return df
 

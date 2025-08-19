@@ -7,8 +7,9 @@ import pandas as pd
 import logging
 from typing import Dict, List, Optional
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +331,297 @@ class DataIngestManager:
         except Exception as e:
             logger.error(f"Failed to get workload: {str(e)}")
             return []
+
+    def _generate_past_datetime(self, days_back: int = 30) -> str:
+        """Generate a random datetime in the past"""
+        days_ago = random.randint(1, days_back)
+        hours_ago = random.randint(0, 23)
+        minutes_ago = random.randint(0, 59)
+
+        past_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago, minutes=minutes_ago)
+        return past_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    def _generate_future_datetime(self, hours_ahead: int = 24) -> str:
+        """Generate a random datetime in the future"""
+        hours_forward = random.randint(1, hours_ahead)
+        minutes_forward = random.randint(0, 59)
+
+        future_time = datetime.utcnow() + timedelta(hours=hours_forward, minutes=minutes_forward)
+        return future_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    def generate_ai_incidents(self, count: int = 100, resolved_percentage: float = 0.7, model_id: str = None, max_tokens: int = None, temperature: float = None) -> bool:
+        """Generate realistic incidents using AI, with mix of resolved and unresolved"""
+        if not self.available:
+            return False
+
+        try:
+            from utils.bedrock_client import bedrock_client
+
+            if not bedrock_client.is_available():
+                logger.error("Bedrock client not available for AI incident generation")
+                return False
+
+            logger.info(f"Generating {count} AI-powered incidents...")
+
+            # Calculate counts
+            resolved_count = int(count * resolved_percentage)
+            unresolved_count = count - resolved_count
+
+            all_incidents = []
+
+            # Generate resolved incidents
+            if resolved_count > 0:
+                resolved_incidents = self._generate_ai_incidents_batch(
+                    bedrock_client, resolved_count, status_type='resolved',
+                    model_id=model_id, max_tokens=max_tokens, temperature=temperature
+                )
+                all_incidents.extend(resolved_incidents)
+
+            # Generate unresolved incidents
+            if unresolved_count > 0:
+                unresolved_incidents = self._generate_ai_incidents_batch(
+                    bedrock_client, unresolved_count, status_type='unresolved',
+                    model_id=model_id, max_tokens=max_tokens, temperature=temperature
+                )
+                all_incidents.extend(unresolved_incidents)
+
+            # Clear existing incidents and insert new ones
+            self.incidents_collection.delete_many({})
+
+            # Also clear workload collection since we're consolidating
+            self.workload_collection.delete_many({})
+
+            if all_incidents:
+                result = self.incidents_collection.insert_many(all_incidents)
+                logger.info(f"Generated and inserted {len(result.inserted_ids)} AI incidents")
+
+                # Update metadata
+                self._update_metadata('incidents', len(all_incidents), 'ai_generated')
+
+                return True
+            else:
+                logger.error("No incidents were generated")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to generate AI incidents: {str(e)}")
+            return False
+
+    def _generate_ai_incidents_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None) -> List[Dict]:
+        """Generate a batch of incidents using AI"""
+        incidents = []
+
+        # Generate incidents in smaller batches to avoid token limits
+        batch_size = 5
+        batches = (count + batch_size - 1) // batch_size
+
+        for batch_num in range(batches):
+            batch_count = min(batch_size, count - batch_num * batch_size)
+
+            if batch_count <= 0:
+                break
+
+            try:
+                batch_incidents = self._generate_ai_batch(
+                    bedrock_client, batch_count, status_type,
+                    model_id=model_id, max_tokens=max_tokens, temperature=temperature
+                )
+                incidents.extend(batch_incidents)
+                logger.info(f"Generated batch {batch_num + 1}/{batches} ({len(batch_incidents)} incidents)")
+
+            except Exception as e:
+                error_msg = f"Failed to generate batch {batch_num + 1}: {str(e)}"
+                logger.error(error_msg)
+                # Re-raise the exception to propagate it up for debugging
+                raise Exception(f"Batch generation failed: {error_msg}")
+
+        return incidents
+
+    def _generate_ai_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None) -> List[Dict]:
+        """Generate a single batch of incidents using AI"""
+
+        # Use provided model settings or fallback to defaults
+        if not model_id:
+            # Fallback to global settings if no model provided
+            from utils.settings_manager import settings_manager
+            ai_settings = settings_manager.get_ai_model_settings()
+            model_id = ai_settings.get("selected_model_id")
+
+            if not model_id:
+                model_id = "anthropic.claude-3-sonnet-20240229-v1:0"
+                logger.warning("No model configured, using Claude Sonnet as fallback")
+
+        if temperature is None:
+            temperature = 0.7
+
+        if max_tokens is None:
+            # Default token allocation for incident generation
+            max_tokens = max(2000, count * 500)  # Minimum 2000, or 500 per incident
+
+        # Create prompt for AI generation
+        if status_type == 'resolved':
+            status_prompt = """Generate RESOLVED incidents with:
+- Status: "Resolved"
+- Resolution details: resolution_code, resolved_on (within last 30 days), resolution_notes
+- Realistic resolution times based on priority
+- IMPORTANT: resolution_notes should vary dramatically in quality and detail:
+  * Lazy agents: "fixed", "done", "sorted", "working now", "resolved"
+  * Average agents: "Reset password", "Restarted service", "Updated driver"
+  * Diligent agents: Detailed technical explanations with steps taken, root cause analysis, and preventive measures"""
+        else:
+            status_prompt = """Generate UNRESOLVED incidents with:
+- Status: "Open", "In Progress", or "Assigned"
+- No resolution details (empty resolution_code, resolved_on, resolution_notes)
+- Some assigned to agents (AGT001-AGT010), some unassigned"""
+
+        prompt = f"""Generate {count} realistic ICT service desk incidents in JSON format. {status_prompt}
+
+Each incident should have these exact fields:
+- incident_id: Format INC#### (sequential numbers)
+- title: Concise problem description
+- description: Detailed technical description
+- priority: P1 (Critical), P2 (High), P3 (Medium), P4 (Low)
+- status: Based on type above
+- category: Choose from "Password Reset", "VPN Issues", "Multi-Factor Authentication", "Printer Support", "Email Problems", "WiFi Connectivity", "Software Installation", "File Share Access", "Phone System", "Hardware Failure", "Application Error", "Account Lockout", "Network Connectivity", "System Performance"
+- service: Choose from "Workplace Technology", "Network Services", "Collaboration Tools", "Security Services", "Infrastructure"
+- urgency: Low, Medium, High, Critical
+- impact: Low, Medium, High, Critical
+- location: Sydney, Melbourne, Brisbane, Perth, Adelaide
+- channel: Phone, Email, Portal, Chat, Walk-in
+- assigned_to: For unresolved: mix of empty and AGT001-AGT010. For resolved: AGT001-AGT010
+- created_on: YYYY-MM-DD HH:MM:SS format (last 30 days)
+- sla_due: YYYY-MM-DD HH:MM:SS format (future for unresolved, past for resolved)
+- customer_id: USR#### format
+- resolution_code: For resolved: "Fixed", "Workaround", "User Error", "Duplicate". For unresolved: empty
+- resolved_on: For resolved: YYYY-MM-DD HH:MM:SS. For unresolved: empty
+- resolution_notes: For resolved: Vary quality dramatically - Examples:
+  * Lazy: "fixed", "done", "sorted", "working now"
+  * Average: "Reset user password", "Restarted print spooler service", "Updated network driver"
+  * Detailed: "Issue caused by corrupted user profile. Backed up user data, created new profile, restored data and settings. Tested all applications. Advised user on profile maintenance best practices to prevent recurrence."
+  For unresolved: empty
+
+Focus on common ICT issues: password resets, VPN problems, email issues, printer troubles, software installations, hardware failures, network connectivity, application errors, account lockouts, file access problems.
+
+Return ONLY a JSON array with no additional text."""
+
+        try:
+            logger.info(f"Generating {count} {status_type} incidents using model: {model_id}")
+            logger.info(f"Model settings: max_tokens={max_tokens}, temperature={temperature}")
+            logger.debug(f"Prompt length: {len(prompt)} characters")
+
+            response = bedrock_client.invoke_model(
+                prompt=prompt,
+                model_id=model_id,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+
+            if not response:
+                error_msg = "No response from Bedrock"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+
+            logger.debug(f"Received response length: {len(response)} characters")
+
+            # Parse JSON response
+            import json
+            try:
+                incidents_data = json.loads(response)
+                if not isinstance(incidents_data, list):
+                    error_msg = f"Response is not a JSON array, got: {type(incidents_data)}"
+                    logger.error(error_msg)
+                    logger.error(f"Response content: {response[:1000]}...")
+                    raise Exception(error_msg)
+
+                logger.info(f"Successfully parsed {len(incidents_data)} incidents from AI response")
+
+                # Process and validate each incident
+                processed_incidents = []
+                for i, incident in enumerate(incidents_data):
+                    processed_incident = self._process_ai_incident(incident, i, status_type)
+                    if processed_incident:
+                        processed_incidents.append(processed_incident)
+                    else:
+                        logger.warning(f"Failed to process incident {i}: {incident}")
+
+                logger.info(f"Successfully processed {len(processed_incidents)} out of {len(incidents_data)} incidents")
+                return processed_incidents
+
+            except json.JSONDecodeError as e:
+                error_msg = f"Failed to parse JSON response: {str(e)}"
+                logger.error(error_msg)
+                logger.error(f"Response was: {response[:1000]}...")
+                raise Exception(f"{error_msg}. Response preview: {response[:200]}...")
+
+        except Exception as e:
+            error_msg = f"Error in AI batch generation: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+
+    def _process_ai_incident(self, incident_data: Dict, index: int, status_type: str) -> Optional[Dict]:
+        """Process and validate a single AI-generated incident"""
+        try:
+            # Generate unique incident ID if not provided or invalid
+            base_id = 1000 + (int(datetime.utcnow().timestamp()) % 10000) + index
+            incident_id = incident_data.get('incident_id', f'INC{base_id:04d}')
+
+            # Ensure incident_id format
+            if not incident_id.startswith('INC'):
+                incident_id = f'INC{base_id:04d}'
+
+            # Build the incident record with readable field names
+            record = {
+                'incident_id': incident_id,
+                'title': incident_data.get('title', 'IT Support Request'),
+                'description': incident_data.get('description', 'User requires technical assistance'),
+                'priority': incident_data.get('priority', 'P3'),
+                'status': incident_data.get('status', 'Open'),
+                'category': incident_data.get('category', 'Password Reset'),  # Now readable name
+                'service': incident_data.get('service', 'Workplace Technology'),  # Now readable name
+                'urgency': incident_data.get('urgency', 'Medium'),
+                'impact': incident_data.get('impact', 'Medium'),
+                'location': incident_data.get('location', 'Sydney'),
+                'channel': incident_data.get('channel', 'Email'),
+                'assigned_to': incident_data.get('assigned_to', ''),
+                'created_on': incident_data.get('created_on', self._generate_past_datetime(30)),
+                'sla_due': incident_data.get('sla_due', self._generate_future_datetime(24)),
+                'customer_id': incident_data.get('customer_id', f'USR{random.randint(1001, 1999)}'),
+                'resolution_code': incident_data.get('resolution_code', ''),
+                'resolved_on': incident_data.get('resolved_on', ''),
+                'resolution_notes': incident_data.get('resolution_notes', ''),
+                '_ingested_at': datetime.utcnow(),
+                '_source': 'ai_generated'
+            }
+
+            # Validate status-specific fields
+            if status_type == 'resolved':
+                if not record['resolution_code']:
+                    record['resolution_code'] = random.choice(['Fixed', 'Workaround', 'User Error', 'Duplicate'])
+                if not record['resolved_on']:
+                    record['resolved_on'] = self._generate_past_datetime(30)
+                if not record['resolution_notes']:
+                    record['resolution_notes'] = 'Issue resolved successfully'
+                if not record['assigned_to']:
+                    record['assigned_to'] = f'AGT{random.randint(1, 10):03d}'
+                record['status'] = 'Resolved'
+            else:
+                # Unresolved incidents
+                record['resolution_code'] = ''
+                record['resolved_on'] = ''
+                record['resolution_notes'] = ''
+                if record['status'] not in ['Open', 'In Progress', 'Assigned']:
+                    record['status'] = random.choice(['Open', 'In Progress', 'Assigned'])
+                # Some unassigned
+                if random.random() < 0.3:  # 30% unassigned
+                    record['assigned_to'] = ''
+                elif not record['assigned_to']:
+                    record['assigned_to'] = f'AGT{random.randint(1, 10):03d}'
+
+            return record
+
+        except Exception as e:
+            logger.error(f"Error processing AI incident: {str(e)}")
+            return None
 
 # Global instance
 data_ingest_manager = DataIngestManager()

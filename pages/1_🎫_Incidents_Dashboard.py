@@ -42,8 +42,6 @@ if incidents_enriched.empty:
 tab1, tab2, tab3 = st.tabs(["📋 All Incidents", "📊 Analytics", "⏳ Current Queue"])
 
 with tab1:
-    st.subheader("All Resolved Incidents")
-    
     # Enhanced filters using enriched data
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -131,43 +129,43 @@ with tab1:
     total_incidents = len(filtered_incidents)
     st.write(f"Showing {total_incidents:,} of {len(incidents_enriched):,} incidents")
 
-    # Enhanced display columns with enriched data - prefer names over IDs
+    # Enhanced display columns - handle both CSV and AI-generated formats
     display_columns = []
-    preferred_columns = [
-        'incident_id', 'created_on', 'short_description', 'true_priority',
-        'category_name', 'service_name', 'group_name', 'ci_name',
-        'location', 'resolution_code', 'time_to_resolve_mins'
+
+    # Define column mappings for different data sources
+    column_mappings = [
+        # (preferred_column, fallback_column, display_name)
+        ('incident_id', None, 'Incident ID'),
+        ('created_on', None, 'Created'),
+        ('short_description', 'title', 'Title'),  # CSV vs AI-generated
+        ('true_priority', 'priority', 'Priority'),  # CSV vs AI-generated
+        ('status', None, 'Status'),
+        ('category_name', 'category', 'Category'),  # Enriched vs AI-generated readable
+        ('service_name', 'service', 'Service'),  # Enriched vs AI-generated readable
+        ('urgency', None, 'Urgency'),
+        ('impact', None, 'Impact'),
+        ('location', None, 'Location'),
+        ('assigned_to', None, 'Assigned To'),
+        ('channel', None, 'Channel'),
+        ('resolution_notes', 'resolution_code', 'Resolution Notes'),
+        ('time_to_resolve_mins', None, 'Resolution Time (mins)')
     ]
 
-    # Only add columns that exist, prioritizing human-readable names
-    for col in preferred_columns:
-        if col in filtered_incidents.columns:
-            display_columns.append(col)
-
-    # Add any other important columns that aren't IDs
-    additional_columns = ['impact', 'urgency', 'channel', 'description']
-    for col in additional_columns:
-        if col in filtered_incidents.columns and col not in display_columns:
-            display_columns.append(col)
+    # Build display columns based on what's available
+    column_renames = {}
+    for preferred, fallback, display_name in column_mappings:
+        if preferred in filtered_incidents.columns:
+            display_columns.append(preferred)
+            column_renames[preferred] = display_name
+        elif fallback and fallback in filtered_incidents.columns:
+            display_columns.append(fallback)
+            column_renames[fallback] = display_name
 
     if display_columns and total_incidents > 0:
-        # Rename columns for better display
+        # Create display dataframe with selected columns
         display_df = filtered_incidents[display_columns].copy()
 
-        column_renames = {
-            'incident_id': 'Incident ID',
-            'created_on': 'Created',
-            'short_description': 'Title',
-            'true_priority': 'Priority',
-            'category_name': 'Category',
-            'service_name': 'Service',
-            'group_name': 'Assigned Group',
-            'ci_name': 'Configuration Item',
-            'location': 'Location',
-            'resolution_code': 'Resolution',
-            'time_to_resolve_mins': 'Resolution Time (mins)'
-        }
-
+        # Apply column renames (already built above)
         display_df = display_df.rename(columns=column_renames)
 
         # Display the table with row selection
@@ -467,17 +465,17 @@ with tab3:
                     st.metric("Due Soon (24h)", "N/A")
         
         with col4:
-            if 'required_skills' in workload.columns:
-                skilled_items = len(workload[workload['required_skills'].notna() & (workload['required_skills'] != '')])
-                st.metric("Requiring Skills", skilled_items)
+            if 'assigned_to' in workload.columns:
+                unassigned_items = len(workload[(workload['assigned_to'].isna()) | (workload['assigned_to'] == '')])
+                st.metric("Unassigned", unassigned_items)
         
         # Current queue table with enriched data
         st.subheader("Queue Items")
 
-        # Define preferred columns with human-readable names
+        # Define preferred columns with human-readable names (using incident schema)
         preferred_queue_columns = [
-            'record_id', 'record_type', 'service_name', 'category_name',
-            'priority', 'location', 'channel', 'sla_due', 'required_skill_name'
+            'incident_id', 'title', 'status', 'priority', 'urgency', 'impact',
+            'service_name', 'category_name', 'location', 'channel', 'assigned_to', 'sla_due'
         ]
 
         # Build display columns list
@@ -505,18 +503,18 @@ with tab3:
                 queue_display_df = queue_display_df.drop('priority_sort', axis=1)
 
             queue_column_renames = {
-                'record_id': 'Record ID',
-                'record_type': 'Type',
-                'service_name': 'Service',
-                'category_name': 'Category',
+                'incident_id': 'Incident ID',
+                'title': 'Title',
+                'status': 'Status',
                 'priority': 'Priority',
-                'location': 'Location',
-                'channel': 'Channel',
-                'sla_due': 'SLA Due',
-                'required_skill_name': 'Required Skill',
-                'description': 'Description',
                 'urgency': 'Urgency',
                 'impact': 'Impact',
+                'service_name': 'Service',
+                'category_name': 'Category',
+                'location': 'Location',
+                'channel': 'Channel',
+                'assigned_to': 'Assigned To',
+                'sla_due': 'SLA Due',
                 'created_on': 'Created'
             }
 
