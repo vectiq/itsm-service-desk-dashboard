@@ -108,6 +108,9 @@ class DataService:
                     if '_id' in df.columns:
                         df = df.drop('_id', axis=1)
                     logger.info(f"Loaded {len(df)} workload items from MongoDB")
+
+                    # Enrich with reference data
+                    df = self._enrich_workload_data(df)
                     return df
                 else:
                     logger.warning("No workload found in MongoDB, falling back to CSV")
@@ -281,6 +284,44 @@ class DataService:
         except Exception as e:
             logger.error(f"Error filtering incidents by category {category}: {str(e)}")
             return pd.DataFrame()
+
+    def _enrich_workload_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Enrich workload data with reference data lookups"""
+        try:
+            if df.empty:
+                return df
+
+            # Load reference data if not already loaded
+            if self.csv_data is None:
+                self.csv_data = ensure_data_loaded()
+
+            # Enrich with skill names
+            if 'required_skills' in df.columns and 'skills_catalog.csv' in self.csv_data:
+                skills_df = self.csv_data['skills_catalog.csv']
+                # Create skill lookup dictionary
+                skill_lookup = dict(zip(skills_df['skill_id'], skills_df['skill_name']))
+
+                # Add skill name column
+                df['required_skill_name'] = df['required_skills'].map(skill_lookup).fillna('Unknown Skill')
+                logger.info(f"Enriched workload with skill names for {len(df)} records")
+
+            # Enrich with service names
+            if 'service_id' in df.columns and 'services_catalog.csv' in self.csv_data:
+                services_df = self.csv_data['services_catalog.csv']
+                service_lookup = dict(zip(services_df['service_id'], services_df['service_name']))
+                df['service_name'] = df['service_id'].map(service_lookup).fillna('Unknown Service')
+
+            # Enrich with category names
+            if 'category_id' in df.columns and 'category_tree.csv' in self.csv_data:
+                categories_df = self.csv_data['category_tree.csv']
+                category_lookup = dict(zip(categories_df['category_id'], categories_df['category_name']))
+                df['category_name'] = df['category_id'].map(category_lookup).fillna('Unknown Category')
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Error enriching workload data: {str(e)}")
+            return df
 
 # Global instance
 data_service = DataService()
