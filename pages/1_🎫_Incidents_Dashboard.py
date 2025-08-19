@@ -79,6 +79,55 @@ if not cmdb_ci.empty and 'ci_id' in incidents.columns and 'ci_id' in cmdb_ci.col
         on='ci_id', how='left'
     )
 
+# Enrich workload queue with related data
+workload_enriched = workload.copy()
+
+# Join workload with services catalog
+if not services.empty and 'service_id' in workload.columns and 'service_id' in services.columns:
+    service_cols = ['service_id', 'name']
+    if 'criticality' in services.columns:
+        service_cols.append('criticality')
+    workload_enriched = workload_enriched.merge(
+        services[service_cols].rename(columns={'name': 'service_name'}),
+        on='service_id', how='left'
+    )
+
+# Join workload with categories
+if not categories.empty and 'category_id' in workload.columns and 'category_id' in categories.columns:
+    category_cols = ['category_id', 'name']
+    if 'parent_id' in categories.columns:
+        category_cols.append('parent_id')
+    if 'path' in categories.columns:
+        category_cols.append('path')
+    workload_enriched = workload_enriched.merge(
+        categories[category_cols].rename(columns={'name': 'category_name'}),
+        on='category_id', how='left'
+    )
+
+# Join workload with assignment groups (if applicable)
+if not assignment_groups.empty and 'assignment_group_id' in workload.columns and 'group_id' in assignment_groups.columns:
+    group_cols = ['group_id', 'name']
+    if 'service' in assignment_groups.columns:
+        group_cols.append('service')
+    if 'queue_type' in assignment_groups.columns:
+        group_cols.append('queue_type')
+    workload_enriched = workload_enriched.merge(
+        assignment_groups[group_cols].rename(columns={'group_id': 'assignment_group_id', 'name': 'group_name'}),
+        on='assignment_group_id', how='left'
+    )
+
+# Join workload with skills catalog
+skills = dfs.get("skills_catalog.csv", pd.DataFrame())
+if not skills.empty and 'required_skills' in workload.columns and 'skill_id' in skills.columns:
+    skill_cols = ['skill_id', 'skill_name']
+    if 'domain' in skills.columns:
+        skill_cols.append('domain')
+
+    workload_enriched = workload_enriched.merge(
+        skills[skill_cols].rename(columns={'skill_id': 'required_skills', 'skill_name': 'required_skill_name'}),
+        on='required_skills', how='left'
+    )
+
 if incidents.empty:
     st.error("No incidents data available")
     st.stop()
@@ -303,14 +352,64 @@ with tab3:
                 skilled_items = len(workload[workload['required_skills'].notna() & (workload['required_skills'] != '')])
                 st.metric("Requiring Skills", skilled_items)
         
-        # Current queue table
+        # Current queue table with enriched data
         st.subheader("Queue Items")
-        queue_columns = []
-        for col in ['record_id', 'record_type', 'service_id', 'category_id', 'priority', 'location', 'channel', 'sla_due', 'required_skills']:
-            if col in workload.columns:
-                queue_columns.append(col)
-        
-        if queue_columns:
-            st.dataframe(workload[queue_columns], use_container_width=True, hide_index=True)
+
+        # Define preferred columns with human-readable names
+        preferred_queue_columns = [
+            'record_id', 'record_type', 'service_name', 'category_name',
+            'priority', 'location', 'channel', 'sla_due', 'required_skill_name'
+        ]
+
+        # Build display columns list
+        queue_display_columns = []
+        for col in preferred_queue_columns:
+            if col in workload_enriched.columns:
+                queue_display_columns.append(col)
+
+        # Add any other important columns that aren't IDs
+        additional_queue_columns = ['description', 'urgency', 'impact', 'created_on']
+        for col in additional_queue_columns:
+            if col in workload_enriched.columns and col not in queue_display_columns:
+                queue_display_columns.append(col)
+
+        if queue_display_columns:
+            # Rename columns for better display
+            queue_display_df = workload_enriched[queue_display_columns].copy()
+
+            # Sort by priority (P1 highest, P2, P3, P4, P5 lowest)
+            if 'priority' in queue_display_df.columns:
+                # Create priority order mapping
+                priority_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
+                queue_display_df['priority_sort'] = queue_display_df['priority'].map(priority_order)
+                queue_display_df = queue_display_df.sort_values('priority_sort', na_position='last')
+                queue_display_df = queue_display_df.drop('priority_sort', axis=1)
+
+            queue_column_renames = {
+                'record_id': 'Record ID',
+                'record_type': 'Type',
+                'service_name': 'Service',
+                'category_name': 'Category',
+                'priority': 'Priority',
+                'location': 'Location',
+                'channel': 'Channel',
+                'sla_due': 'SLA Due',
+                'required_skill_name': 'Required Skill',
+                'description': 'Description',
+                'urgency': 'Urgency',
+                'impact': 'Impact',
+                'created_on': 'Created'
+            }
+
+            queue_display_df = queue_display_df.rename(columns=queue_column_renames)
+
+            st.dataframe(
+                queue_display_df,
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
+        else:
+            st.info("No queue data columns available for display")
     else:
         st.info("No current workload queue data available")
