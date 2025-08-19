@@ -415,7 +415,7 @@ class DataIngestManager:
         incidents = []
 
         # Generate incidents in smaller batches to avoid token limits
-        batch_size = 5
+        batch_size = 10
         batches = (count + batch_size - 1) // batch_size
 
         for batch_num in range(batches):
@@ -458,8 +458,8 @@ class DataIngestManager:
             temperature = 0.7
 
         if max_tokens is None:
-            # Default token allocation for incident generation
-            max_tokens = max(2000, count * 500)  # Minimum 2000, or 500 per incident
+            # Default token allocation for incident generation - optimized for batches of 10
+            max_tokens = max(3000, min(count, 10) * 300)  # Minimum 3000, or 300 per incident (max 10 per batch)
 
         # Create prompt for AI generation
         if status_type == 'resolved':
@@ -477,7 +477,7 @@ class DataIngestManager:
 - No resolution details (empty resolution_code, resolved_on, resolution_notes)
 - Some assigned to agents (AGT001-AGT010), some unassigned"""
 
-        prompt = f"""Generate {count} realistic ICT service desk incidents in JSON format. {status_prompt}
+        prompt = f"""Generate exactly {count} realistic ICT service desk incidents in JSON format. CRITICAL: You must generate exactly {count} incidents, no more, no less. {status_prompt}
 
 Each incident should have these exact fields:
 - incident_id: Format INC#### (sequential numbers)
@@ -505,7 +505,7 @@ Each incident should have these exact fields:
 
 Focus on common ICT issues: password resets, VPN problems, email issues, printer troubles, software installations, hardware failures, network connectivity, application errors, account lockouts, file access problems.
 
-Return ONLY a JSON array with no additional text."""
+IMPORTANT: Return ONLY a JSON array with exactly {count} incident objects. Do not include any markdown formatting, code blocks, or additional text. The response must be valid JSON that can be parsed directly."""
 
         try:
             logger.info(f"Generating {count} {status_type} incidents using model: {model_id}")
