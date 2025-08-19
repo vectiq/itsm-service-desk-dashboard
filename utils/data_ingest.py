@@ -32,6 +32,7 @@ class DataIngestManager:
             self.agents_collection = self.db.agents
             self.workload_collection = self.db.workload
             self.metadata_collection = self.db.data_metadata
+            self.kb_articles_collection = self.db.kb_articles
             
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {str(e)}")
@@ -331,6 +332,23 @@ class DataIngestManager:
         except Exception as e:
             logger.error(f"Failed to get workload: {str(e)}")
             return []
+    
+    def save_kb_article(self, article: Dict) -> bool:
+        """Save KB article to MongoDB"""
+        if not self.available:
+            return False
+        
+        try:
+            article['_created_at'] = datetime.utcnow()
+            article['_id'] = f"kb_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            
+            self.kb_articles_collection.insert_one(article)
+            logger.info(f"Saved KB article: {article.get('title', 'Untitled')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save KB article: {str(e)}")
+            return False
 
     def _generate_past_datetime(self, days_back: int = 30) -> str:
         """Generate a random datetime in the past"""
