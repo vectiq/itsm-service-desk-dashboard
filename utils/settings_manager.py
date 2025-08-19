@@ -116,9 +116,9 @@ class SettingsManager:
                     current = current[key]
             
             # Use $set to update nested field
-            mongo_update = {"$set": {}}
-            self._flatten_dict(update_query, mongo_update["$set"])
-            
+            flattened = self._flatten_dict(update_query)
+            mongo_update = {"$set": flattened}
+
             result = self.settings_collection.update_one(
                 {"_id": "global_config"},
                 mongo_update,
