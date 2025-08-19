@@ -2,12 +2,14 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+import logging
 
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_service import data_service
 from utils.bedrock_client import bedrock_client, refresh_bedrock_client
 from utils.settings_manager import settings_manager
+from utils.data_ingest import data_ingest_manager
 
 st.set_page_config(page_title="AI Features", page_icon="🤖", layout="wide")
 st.title("🤖 AI-Powered ITSM Features")
@@ -352,7 +354,7 @@ with tab1:
 
 with tab2:
     st.subheader("📚 UC-21: AI-Generated Knowledge Base Articles")
-    st.write("Generate KB articles from clusters of similar incidents.")
+    st.write("Generate KB articles from clusters of similar resolved incidents.")
 
     # System prompt for this use case
     st.write("**System Prompt:**")
@@ -376,108 +378,243 @@ with tab2:
             else:
                 st.error("❌ Failed to save prompt")
 
+    # Get resolved incidents only
     incidents = data_service.get_incidents()
     
     if not incidents.empty:
-        col1, col2 = st.columns([1, 1])
+        # Filter for resolved incidents only
+        resolved_incidents = incidents[incidents['resolution_notes'].notna() & (incidents['resolution_notes'] != '')].copy()
         
-        with col1:
-            st.write("**Create KB Article from Incident Cluster:**")
+        if resolved_incidents.empty:
+            st.warning("No resolved incidents found with resolution notes.")
+        else:
+            st.info(f"Found {len(resolved_incidents)} resolved incidents with resolution notes.")
             
-            # Group incidents by category for clustering simulation
-            if 'category_name' in incidents.columns:
-                categories = incidents['category_name'].dropna().unique()
-                selected_category = st.selectbox("Select incident category:", categories)
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.write("**Filter Resolved Tickets for KB Generation:**")
                 
-                category_incidents = incidents[incidents['category_name'] == selected_category]
+                # Filter options
+                filter_col1, filter_col2 = st.columns([1, 1])
                 
-                st.write(f"**Found {len(category_incidents)} incidents in this category**")
+                with filter_col1:
+                    # Priority filter
+                    if 'true_priority' in resolved_incidents.columns:
+                        priorities = ['All'] + sorted(resolved_incidents['true_priority'].dropna().unique().tolist())
+                        selected_priority = st.selectbox("Filter by Priority:", priorities)
+                        
+                        if selected_priority != 'All':
+                            resolved_incidents = resolved_incidents[resolved_incidents['true_priority'] == selected_priority]
+                
+                with filter_col2:
+                    # Category filter
+                    if 'category_name' in resolved_incidents.columns:
+                        categories = ['All'] + sorted(resolved_incidents['category_name'].dropna().unique().tolist())
+                        selected_category = st.selectbox("Filter by Category:", categories)
+                        
+                        if selected_category != 'All':
+                            resolved_incidents = resolved_incidents[resolved_incidents['category_name'] == selected_category]
+                
+                # Ground truth cluster filter (for similar incidents)
+                if 'ground_truth_cluster' in resolved_incidents.columns:
+                    clusters = ['All'] + sorted(resolved_incidents['ground_truth_cluster'].dropna().unique().tolist())
+                    selected_cluster = st.selectbox("Filter by Issue Type:", clusters, help="Groups similar incidents together")
+                    
+                    if selected_cluster != 'All':
+                        resolved_incidents = resolved_incidents[resolved_incidents['ground_truth_cluster'] == selected_cluster]
+                
+                st.write(f"**Filtered Results: {len(resolved_incidents)} incidents**")
                 
                 # Show sample incidents
-                if len(category_incidents) > 0:
+                if len(resolved_incidents) > 0:
                     st.write("**Sample incidents to include:**")
-                    for idx, incident in category_incidents.head(3).iterrows():
-                        st.write(f"- {incident.get('short_description', 'No description')}")
+                    sample_incidents = resolved_incidents.head(5)
+                    for idx, incident in sample_incidents.iterrows():
+                        st.write(f"- **{incident.get('short_description', 'No description')}**")
+                        st.write(f"  Priority: {incident.get('true_priority', 'Unknown')} | Resolution: {incident.get('resolution_notes', 'No notes')[:50]}...")
                     
-                    if st.button("📝 Generate KB Article", type="primary"):
-                        incident_cluster = category_incidents.head(5).to_dict('records')
+                    if len(resolved_incidents) > 5:
+                        st.write(f"... and {len(resolved_incidents) - 5} more incidents")
+                    
+                    if st.button("📝 Generate KB Article from Filtered Tickets", type="primary"):
+                        # Use all filtered incidents, limit to 10 for token efficiency
+                        incident_cluster = resolved_incidents.head(10).to_dict('records')
                         
-                        with st.spinner(f"AI is generating KB article using {selected_model_name}..."):
-                            # Prepare incident summaries
+                        with st.spinner(f"AI is analyzing {len(incident_cluster)} resolved tickets using {selected_model_name}..."):
+                            # Prepare detailed incident summaries with resolutions
                             incident_summaries = []
-                            for incident in incident_cluster[:5]:  # Limit to 5 incidents
-                                summary = f"- {incident.get('short_description', 'No description')}"
+                            for i, incident in enumerate(incident_cluster, 1):
+                                summary = f"{i}. **Issue:** {incident.get('short_description', 'No description')}"
+                                if incident.get('description'):
+                                    summary += f"\n   **Details:** {incident.get('description', '')[:100]}..."
                                 if incident.get('resolution_notes'):
-                                    summary += f" (Resolved: {incident['resolution_notes']})"
+                                    summary += f"\n   **Resolution:** {incident.get('resolution_notes', '')}"
+                                if incident.get('time_to_resolve_mins'):
+                                    summary += f"\n   **Resolution Time:** {incident.get('time_to_resolve_mins')} minutes"
                                 incident_summaries.append(summary)
 
-                            incidents_text = '\n'.join(incident_summaries)
+                            incidents_text = '\n\n'.join(incident_summaries)
 
-                            prompt = f"""Based on these similar incidents, create a comprehensive KB article:
+                            prompt = f"""Analyze these {len(incident_cluster)} resolved IT support tickets and create a comprehensive knowledge base article.
 
+                            RESOLVED TICKETS:
                             {incidents_text}
 
-                            Create a KB article with:
-                            1. Title: Clear, searchable title
-                            2. Problem: What issue users experience
-                            3. Solution: Step-by-step resolution
-                            4. Tags: Relevant keywords for search
+                            Based on the common patterns in these resolved tickets, create a knowledge base article that would help users and support agents resolve similar issues quickly.
 
-                            Format your response as:
-                            Title: [Article title]
-                            Problem: [Problem description]
-                            Solution: [Step-by-step solution]
-                            Tags: [comma-separated tags]
+                            Requirements:
+                            1. **Title**: Create a clear, searchable title that covers the main issue
+                            2. **Problem Description**: Describe what users typically experience
+                            3. **Root Cause**: Explain why this issue occurs
+                            4. **Solution Steps**: Provide step-by-step resolution instructions
+                            5. **Prevention**: Suggest how to prevent this issue
+                            6. **Tags**: List relevant keywords for searchability
+
+                            Format your response exactly as:
+                            Title: [Clear, specific title]
+                            Problem: [What users experience]
+                            Root Cause: [Why this happens]
+                            Solution: [Step-by-step instructions]
+                            Prevention: [How to avoid this issue]
+                            Tags: [comma-separated keywords]
                             """
 
                             response = bedrock_client.invoke_model(
                                 prompt,
                                 selected_model_id,
-                                min(max_tokens, 1000),
+                                min(max_tokens, 1500),
                                 temperature,
                                 system_prompt=settings_manager.get_setting("system_prompts.kb_generation")
                             )
 
                             if response:
-                                sections = {"title": "", "problem": "", "solution": "", "tags": ""}
+                                sections = {"title": "", "problem": "", "root_cause": "", "solution": "", "prevention": "", "tags": ""}
                                 current_section = None
 
                                 for line in response.split('\n'):
+                                    line = line.strip()
                                     if line.startswith('Title:'):
                                         sections['title'] = line.split(':', 1)[1].strip()
                                     elif line.startswith('Problem:'):
                                         sections['problem'] = line.split(':', 1)[1].strip()
                                         current_section = 'problem'
+                                    elif line.startswith('Root Cause:'):
+                                        sections['root_cause'] = line.split(':', 1)[1].strip()
+                                        current_section = 'root_cause'
                                     elif line.startswith('Solution:'):
                                         sections['solution'] = line.split(':', 1)[1].strip()
                                         current_section = 'solution'
+                                    elif line.startswith('Prevention:'):
+                                        sections['prevention'] = line.split(':', 1)[1].strip()
+                                        current_section = 'prevention'
                                     elif line.startswith('Tags:'):
                                         sections['tags'] = line.split(':', 1)[1].strip()
                                         current_section = None
-                                    elif current_section and line.strip():
-                                        sections[current_section] += ' ' + line.strip()
+                                    elif current_section and line:
+                                        sections[current_section] += ' ' + line
 
                                 article = sections
                             else:
-                                article = {"title": "Generated Article", "problem": "", "solution": "", "tags": ""}
+                                article = {"title": "Generated Article", "problem": "", "root_cause": "", "solution": "", "prevention": "", "tags": ""}
                         
-                        st.success("✅ KB Article Generated!")
+                        # Store in session state
+                        st.session_state.generated_article = article
+                        st.session_state.incident_cluster = incident_cluster
+                        st.session_state.selected_priority = selected_priority
+                        st.session_state.selected_category = selected_category
+                        st.session_state.selected_cluster = selected_cluster
                         
-                        with col2:
-                            st.write("**Generated Knowledge Base Article:**")
-                            
-                            st.write(f"**Title:** {article['title']}")
-                            st.write(f"**Problem:** {article['problem']}")
-                            st.write(f"**Solution:** {article['solution']}")
-                            st.write(f"**Tags:** {article['tags']}")
-                            
-                            # Option to save to KB
-                            if st.button("💾 Save to Knowledge Base"):
-                                st.success("Article saved to knowledge base! (Demo)")
-        
-        with col2:
-            if 'article' not in locals():
-                st.info("👈 Generate an article to see the results here")
+                        st.success("✅ KB Article Generated from Resolved Tickets!")
+                        
+                        
+            # Display generated article if it exists in session state
+            if 'generated_article' in st.session_state:
+                article = st.session_state.generated_article
+                incident_cluster = st.session_state.incident_cluster
+                selected_priority = st.session_state.selected_priority
+                selected_category = st.session_state.selected_category
+                selected_cluster = st.session_state.selected_cluster
+                
+                with col2:
+                    st.write("**Generated Knowledge Base Article:**")
+                    
+                    st.markdown(f"### {article['title']}")
+                    
+                    st.write("**Problem Description:**")
+                    st.write(article['problem'])
+                    
+                    st.write("**Root Cause:**")
+                    st.write(article['root_cause'])
+                    
+                    st.write("**Solution Steps:**")
+                    st.write(article['solution'])
+                    
+                    st.write("**Prevention:**")
+                    st.write(article['prevention'])
+                    
+                    st.write("**Tags:**")
+                    st.code(article['tags'])
+                    
+                    # Show source information
+                    st.write("---")
+                    st.write(f"**Generated from:** {len(incident_cluster)} resolved tickets")
+                    if selected_priority != 'All':
+                        st.write(f"**Priority Filter:** {selected_priority}")
+                    if selected_category != 'All':
+                        st.write(f"**Category Filter:** {selected_category}")
+                    if selected_cluster != 'All':
+                        st.write(f"**Issue Type:** {selected_cluster}")
+                    
+                    # Option to save to KB
+                    if st.button("💾 Save to Knowledge Base", help="Save this article to the knowledge base"):
+                        # Save to MongoDB
+                        kb_data = {
+                            'title': article['title'],
+                            'problem': article['problem'],
+                            'root_cause': article['root_cause'],
+                            'solution': article['solution'],
+                            'prevention': article['prevention'],
+                            'tags': article['tags'],
+                            'source_incidents': len(incident_cluster),
+                            'filters': {
+                                'priority': selected_priority if selected_priority != 'All' else None,
+                                'category': selected_category if selected_category != 'All' else None,
+                                'cluster': selected_cluster if selected_cluster != 'All' else None
+                            }
+                        }
+                        
+                        success = data_ingest_manager.save_kb_article(kb_data)
+                        if success:
+                            st.success("✅ Article saved to knowledge base!")
+                            st.balloons()
+                        else:
+                            st.error("❌ Failed to save article. Check MongoDB connection.")
+            
+            elif 'generated_article' not in st.session_state:
+                with col2:
+                    st.info("👈 Filter resolved tickets and generate KB article")
+                    
+                    # Show statistics about resolved incidents
+                    st.write("**Resolved Incidents Overview:**")
+                    
+                    if 'true_priority' in resolved_incidents.columns:
+                        priority_counts = resolved_incidents['true_priority'].value_counts()
+                        st.write("**By Priority:**")
+                        for priority, count in priority_counts.items():
+                            st.write(f"- {priority}: {count} incidents")
+                    
+                    if 'ground_truth_cluster' in resolved_incidents.columns:
+                        cluster_counts = resolved_incidents['ground_truth_cluster'].value_counts().head(5)
+                        st.write("**Top Issue Types:**")
+                        for cluster, count in cluster_counts.items():
+                            st.write(f"- {cluster}: {count} incidents")
+                    
+                    if 'time_to_resolve_mins' in resolved_incidents.columns:
+                        avg_resolution = resolved_incidents['time_to_resolve_mins'].mean()
+                        st.write(f"**Average Resolution Time:** {avg_resolution:.1f} minutes")
+    else:
+        st.warning("No incident data available. Please check your data source.")
 
 with tab3:
     st.subheader("👥 UC-31: AI-Powered Agent Assignment")

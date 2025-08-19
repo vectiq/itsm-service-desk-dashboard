@@ -8,6 +8,7 @@ import os
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_loader import ensure_data_loaded
+from utils.data_ingest import data_ingest_manager
 
 st.set_page_config(page_title="Knowledge Base", page_icon="📚", layout="wide")
 st.title("📚 Knowledge Base")
@@ -15,9 +16,24 @@ st.title("📚 Knowledge Base")
 # Ensure data is loaded
 dfs = ensure_data_loaded()
 
-# Get knowledge base data
-kb_articles = dfs.get("kb_articles.csv", pd.DataFrame())
+# Get knowledge base data from MongoDB and CSV
+kb_articles_csv = dfs.get("kb_articles.csv", pd.DataFrame())
 kb_templates = dfs.get("kb_templates.csv", pd.DataFrame())
+
+# Get AI-generated KB articles from MongoDB
+ai_kb_articles = []
+if data_ingest_manager.is_available():
+    try:
+        ai_articles = list(data_ingest_manager.kb_articles_collection.find({}, {"_id": 0}))
+        ai_kb_articles = pd.DataFrame(ai_articles) if ai_articles else pd.DataFrame()
+    except Exception as e:
+        st.sidebar.warning(f"Could not load AI-generated articles: {str(e)}")
+        ai_kb_articles = pd.DataFrame()
+else:
+    ai_kb_articles = pd.DataFrame()
+
+# Combine CSV and AI-generated articles
+kb_articles = pd.concat([kb_articles_csv, ai_kb_articles], ignore_index=True) if not ai_kb_articles.empty else kb_articles_csv
 categories = dfs.get("category_tree.csv", pd.DataFrame())
 services = dfs.get("services_catalog.csv", pd.DataFrame())
 incidents = dfs.get("incidents_resolved.csv", pd.DataFrame())
@@ -65,33 +81,73 @@ with tab1:
         if selected_state != 'All':
             filtered_articles = filtered_articles[filtered_articles['publish_state'] == selected_state]
         
-        st.write(f"Showing {len(filtered_articles):,} of {len(kb_articles):,} articles")
+        # Show article counts
+        ai_count = len([a for _, a in filtered_articles.iterrows() if 'problem' in a and pd.notna(a.get('problem'))])
+        standard_count = len(filtered_articles) - ai_count
+        st.write(f"Showing {len(filtered_articles):,} articles ({ai_count} AI-generated, {standard_count} standard) of {len(kb_articles):,} total")
         
         # Display articles
         if not filtered_articles.empty:
             for idx, article in filtered_articles.iterrows():
-                with st.expander(f"📄 {article.get('title', 'Untitled Article')} (ID: {article.get('article_id', 'N/A')})"):
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        if 'body' in article and pd.notna(article['body']):
-                            st.write("**Content:**")
-                            st.write(article['body'])
-                        else:
-                            st.write("*No content available*")
-                    
-                    with col2:
-                        st.write("**Details:**")
-                        if 'service_id' in article and pd.notna(article['service_id']):
-                            st.write(f"**Service:** {article['service_id']}")
-                        if 'category_id' in article and pd.notna(article['category_id']):
-                            st.write(f"**Category:** {article['category_id']}")
-                        if 'tags' in article and pd.notna(article['tags']):
-                            st.write(f"**Tags:** {article['tags']}")
-                        if 'publish_state' in article and pd.notna(article['publish_state']):
-                            st.write(f"**Status:** {article['publish_state']}")
-                        if 'owner_group_id' in article and pd.notna(article['owner_group_id']):
-                            st.write(f"**Owner:** {article['owner_group_id']}")
+                # Check if this is an AI-generated article
+                is_ai_generated = 'problem' in article and pd.notna(article.get('problem'))
+                article_type = "🤖 AI-Generated" if is_ai_generated else "📄 Standard"
+                
+                with st.expander(f"{article_type}: {article.get('title', 'Untitled Article')}"):
+                    if is_ai_generated:
+                        # Display AI-generated article format
+                        st.markdown(f"### {article.get('title', 'Untitled Article')}")
+                        
+                        if article.get('problem'):
+                            st.write("**Problem Description:**")
+                            st.write(article['problem'])
+                        
+                        if article.get('root_cause'):
+                            st.write("**Root Cause:**")
+                            st.write(article['root_cause'])
+                        
+                        if article.get('solution'):
+                            st.write("**Solution Steps:**")
+                            st.write(article['solution'])
+                        
+                        if article.get('prevention'):
+                            st.write("**Prevention:**")
+                            st.write(article['prevention'])
+                        
+                        if article.get('tags'):
+                            st.write("**Tags:**")
+                            st.code(article['tags'])
+                        
+                        # Show generation metadata
+                        st.write("---")
+                        st.write("**Generation Info:**")
+                        if article.get('source_incidents'):
+                            st.write(f"Generated from {article['source_incidents']} resolved incidents")
+                        if article.get('_created_at'):
+                            st.write(f"Created: {article['_created_at']}")
+                    else:
+                        # Display standard article format
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            if 'body' in article and pd.notna(article['body']):
+                                st.write("**Content:**")
+                                st.write(article['body'])
+                            else:
+                                st.write("*No content available*")
+                        
+                        with col2:
+                            st.write("**Details:**")
+                            if 'service_id' in article and pd.notna(article['service_id']):
+                                st.write(f"**Service:** {article['service_id']}")
+                            if 'category_id' in article and pd.notna(article['category_id']):
+                                st.write(f"**Category:** {article['category_id']}")
+                            if 'tags' in article and pd.notna(article['tags']):
+                                st.write(f"**Tags:** {article['tags']}")
+                            if 'publish_state' in article and pd.notna(article['publish_state']):
+                                st.write(f"**Status:** {article['publish_state']}")
+                            if 'owner_group_id' in article and pd.notna(article['owner_group_id']):
+                                st.write(f"**Owner:** {article['owner_group_id']}")
         else:
             st.info("No articles match the selected filters")
     else:
