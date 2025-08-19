@@ -465,6 +465,7 @@ class DataIngestManager:
         if status_type == 'resolved':
             status_prompt = """Generate RESOLVED incidents with:
 - Status: "Resolved"
+- Priority: P1 (Critical), P2 (High), P3 (Medium), P4 (Low) - MUST be populated for resolved incidents
 - Resolution details: resolution_code, resolved_on (within last 30 days), resolution_notes
 - Realistic resolution times based on priority
 - IMPORTANT: resolution_notes should vary dramatically in quality and detail:
@@ -474,6 +475,7 @@ class DataIngestManager:
         else:
             status_prompt = """Generate UNRESOLVED incidents with:
 - Status: "Open", "In Progress", or "Assigned"
+- Priority: null (leave blank/empty for unresolved incidents)
 - No resolution details (empty resolution_code, resolved_on, resolution_notes)
 - Some assigned to agents (AGT001-AGT010), some unassigned"""
 
@@ -483,7 +485,7 @@ Each incident should have these exact fields:
 - incident_id: Format INC#### (sequential numbers)
 - title: Concise problem description
 - description: Detailed technical description
-- priority: P1 (Critical), P2 (High), P3 (Medium), P4 (Low)
+- priority: P1 (Critical), P2 (High), P3 (Medium), P4 (Low) for resolved incidents; null/empty for unresolved incidents
 - status: Based on type above
 - category: Choose from "Password Reset", "VPN Issues", "Multi-Factor Authentication", "Printer Support", "Email Problems", "WiFi Connectivity", "Software Installation", "File Share Access", "Phone System", "Hardware Failure", "Application Error", "Account Lockout", "Network Connectivity", "System Performance"
 - service: Choose from "Workplace Technology", "Network Services", "Collaboration Tools", "Security Services", "Infrastructure"
@@ -592,7 +594,7 @@ IMPORTANT: Return ONLY a JSON array with exactly {count} incident objects. Do no
                 'incident_id': incident_id,
                 'title': incident_data.get('title', 'IT Support Request'),
                 'description': incident_data.get('description', 'User requires technical assistance'),
-                'priority': incident_data.get('priority', 'P3'),
+                'priority': incident_data.get('priority') if incident_data.get('priority') else None,
                 'status': incident_data.get('status', 'Open'),
                 'category': incident_data.get('category', 'Password Reset'),  # Now readable name
                 'service': incident_data.get('service', 'Workplace Technology'),  # Now readable name

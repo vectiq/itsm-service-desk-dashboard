@@ -28,12 +28,21 @@ def generate_sample_agents():
     
     # Available skills from the current queue
     available_skills = [
-        'MFA/Authenticator Support',
-        'Outlook/Exchange', 
-        'VPN Troubleshooting',
-        'Printer Support',
-        'Password Reset',
-        'Wi-Fi Access Issues'
+        'General ICT Support',
+        'Networking',
+        'Security & Authentication',
+        'Hardware Support',
+        'Software Support',
+        'Email & Communication',
+        'Database Administration',
+        'System Administration',
+        'Cloud Services',
+        'Mobile Device Support',
+        'Printer & Peripherals',
+        'VPN & Remote Access',
+        'Application Development',
+        'Web Technologies',
+        'Backup & Recovery'
     ]
     
     # Sample agent names
@@ -46,8 +55,8 @@ def generate_sample_agents():
     # Generate agents
     agents = []
     for i, name in enumerate(agent_names):
-        # Assign 1-2 skills randomly
-        num_skills = random.randint(1, 2)
+        # Assign 2-4 skills randomly (more realistic for ICT support agents)
+        num_skills = random.randint(2, 4)
         agent_skills = random.sample(available_skills, num_skills)
 
         # Generate current queue (0-5, where 5 is full)
