@@ -521,7 +521,7 @@ with tab2:
                                         sections['tags'] = line.split(':', 1)[1].strip()
                                         current_section = None
                                     elif current_section and line:
-                                        sections[current_section] += ' ' + line
+                                        sections[current_section] += '\n' + line
 
                                 article = sections
                             else:
@@ -551,16 +551,16 @@ with tab2:
                     st.markdown(f"### {article['title']}")
                     
                     st.write("**Problem Description:**")
-                    st.write(article['problem'])
-                    
+                    st.markdown(article['problem'])
+
                     st.write("**Root Cause:**")
-                    st.write(article['root_cause'])
-                    
+                    st.markdown(article['root_cause'])
+
                     st.write("**Solution Steps:**")
-                    st.write(article['solution'])
-                    
+                    st.markdown(article['solution'])
+
                     st.write("**Prevention:**")
-                    st.write(article['prevention'])
+                    st.markdown(article['prevention'])
                     
                     st.write("**Tags:**")
                     st.code(article['tags'])
