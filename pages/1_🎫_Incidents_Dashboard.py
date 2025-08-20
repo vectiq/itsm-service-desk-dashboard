@@ -172,7 +172,7 @@ with tab1:
                 # Create a container for better visual grouping
                 with st.container():
                     # Use columns for horizontal layout but keep them visually together
-                    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+                    btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns(5)
 
                     with btn_col1:
                         view_clicked = st.button("👁️ View", key=f"queue_view_{selected_incident_id}", use_container_width=True)
@@ -185,6 +185,9 @@ with tab1:
 
                     with btn_col4:
                         classify_clicked = st.button("🎯 Auto-Classify", key=f"queue_classify_{selected_incident_id}", use_container_width=True)
+
+                    with btn_col5:
+                        assign_clicked = st.button("👥 Auto-Assign", key=f"queue_assign_{selected_incident_id}", use_container_width=True)
 
                     # Handle button clicks
                     if view_clicked:
@@ -339,6 +342,209 @@ with tab1:
                                             st.error(f"❌ Error during classification: {str(e)}")
                                     else:
                                         st.warning("⚠️ No model configured. Please go to AI Features page and select a model first.")
+                            else:
+                                st.error("❌ AI service not available - check AWS credentials")
+                        else:
+                            st.warning("⚠️ Incident missing title or description")
+
+                    if assign_clicked:
+                        # Get the incident data for agent assignment
+                        title = incident_data.get('short_description') or incident_data.get('title', '')
+                        description = incident_data.get('description', '')
+                        category = incident_data.get('category_name') or incident_data.get('category', '')
+
+                        if title and description:
+                            if bedrock_client.is_available():
+                                with st.spinner(f"Finding best agent for {selected_incident_id}..."):
+                                    # Get agents data
+                                    agents_df = data_service.get_agents()
+
+                                    if not agents_df.empty:
+                                        # Get settings from MongoDB
+                                        ai_settings = settings_manager.get_ai_model_settings()
+                                        system_prompt = settings_manager.get_setting("system_prompts.agent_assignment",
+                                            "You are an ITSM resource allocation expert with deep understanding of skill matching, workload balancing, and performance optimisation for technical support teams. You will consider skillset matching with the title, description and category of incident, but you will also consider the agent's current workload. If the agent is currently fully allocated, do not attempt to assign the item to them.")
+
+                                        model_id = ai_settings.get("selected_model_id")
+                                        model_name = ai_settings.get("selected_model_name", "Unknown Model")
+                                        max_tokens = ai_settings.get("max_tokens", 400)
+                                        temperature = ai_settings.get("temperature", 0.3)
+
+                                        if model_id:
+                                            # Prepare agent information
+                                            agent_info = []
+                                            for _, agent in agents_df.iterrows():
+                                                skills = agent.get('skills', [])
+                                                if isinstance(skills, str):
+                                                    # Handle case where skills might be stored as string
+                                                    skills = [skills]
+                                                elif not isinstance(skills, list):
+                                                    skills = []
+
+                                                queue_load = agent.get('current_queue', 0)
+                                                status = agent.get('status', 'Unknown')
+                                                name = agent.get('name', 'Unknown')
+
+                                                # Determine availability based on queue and status
+                                                if queue_load >= 5:
+                                                    availability = "FULL (5/5 - Cannot take new assignments)"
+                                                elif queue_load >= 4:
+                                                    availability = f"BUSY ({queue_load}/5 - Limited capacity)"
+                                                elif queue_load >= 2:
+                                                    availability = f"MODERATE ({queue_load}/5 - Available)"
+                                                else:
+                                                    availability = f"AVAILABLE ({queue_load}/5 - Good capacity)"
+
+                                                if status != 'Available':
+                                                    availability += f" - Status: {status}"
+
+                                                skills_str = ', '.join(skills) if skills else 'No specific skills listed'
+                                                agent_summary = f"- {name}: Skills: [{skills_str}], Workload: {availability}"
+                                                agent_info.append(agent_summary)
+
+                                            # Create the prompt
+                                            prompt = f"""Analyze this incident and recommend the best agent for assignment.
+
+                                            Incident Details:
+                                            Title: {title}
+                                            Description: {description}
+                                            Category: {category}
+
+                                            Available Agents:
+                                            {chr(10).join(agent_info)}
+
+                                            Assignment Rules:
+                                            1. Match agent skills to incident requirements
+                                            2. Consider current workload - do NOT assign to agents marked as FULL
+                                            3. Prefer agents with AVAILABLE or MODERATE workload
+                                            4. If no suitable agent is available due to workload, recommend leaving unassigned
+                                            5. Consider agent status (Available vs Away/Busy)
+
+                                            Respond with:
+                                            Recommended Agent: [Agent name or "UNASSIGNED"]
+                                            Reasoning: [Brief explanation of why this agent was chosen or why leaving unassigned]
+                                            Confidence: [High/Medium/Low]
+                                            """
+
+                                            try:
+                                                response = bedrock_client.invoke_model(
+                                                    prompt,
+                                                    model_id,
+                                                    max_tokens,
+                                                    temperature,
+                                                    system_prompt=system_prompt
+                                                )
+
+                                                if response:
+                                                    # Show raw response for debugging
+                                                    with st.expander("🔍 Raw AI Response", expanded=False):
+                                                        st.code(response)
+
+                                                    # Parse response with improved logic
+                                                    recommended_agent = "UNASSIGNED"
+                                                    reasoning = "Unable to determine"
+                                                    confidence = "Low"
+
+                                                    # Method 1: Look for structured sections
+                                                    lines = response.split('\n')
+
+                                                    # Find recommended agent
+                                                    for line in lines:
+                                                        line = line.strip()
+                                                        if line.startswith('Recommended Agent:'):
+                                                            recommended_agent = line.split(':', 1)[1].strip()
+                                                            break
+
+                                                    # Find reasoning - look for "Reasoning:" and capture everything after it
+                                                    reasoning_found = False
+                                                    reasoning_lines = []
+
+                                                    for line in lines:
+                                                        line = line.strip()
+                                                        if line.startswith('Reasoning:'):
+                                                            reasoning_found = True
+                                                            # Get any text after "Reasoning:" on the same line
+                                                            after_colon = line.split(':', 1)[1].strip()
+                                                            if after_colon:
+                                                                reasoning_lines.append(after_colon)
+                                                        elif reasoning_found and line:
+                                                            # Continue collecting reasoning lines until we hit another section or end
+                                                            if line.startswith(('Recommended Agent:', 'Confidence:', 'Summary:')):
+                                                                break
+                                                            reasoning_lines.append(line)
+
+                                                    # Join reasoning lines
+                                                    if reasoning_lines:
+                                                        reasoning = '\n'.join(reasoning_lines).strip()
+
+                                                    # Method 2: If still no reasoning, try alternative parsing
+                                                    if reasoning == "Unable to determine":
+                                                        # Look for text after "Reasoning:" in the entire response
+                                                        if 'Reasoning:' in response:
+                                                            parts = response.split('Reasoning:', 1)
+                                                            if len(parts) > 1:
+                                                                after_reasoning = parts[1].strip()
+                                                                # Take everything until next section or end
+                                                                next_section = None
+                                                                for section in ['Recommended Agent:', 'Confidence:', 'Summary:']:
+                                                                    if section in after_reasoning:
+                                                                        idx = after_reasoning.find(section)
+                                                                        if next_section is None or idx < after_reasoning.find(next_section):
+                                                                            next_section = section
+
+                                                                if next_section:
+                                                                    reasoning = after_reasoning.split(next_section)[0].strip()
+                                                                else:
+                                                                    reasoning = after_reasoning.strip()
+
+                                                    # Method 3: If still no reasoning, use everything after recommended agent
+                                                    if reasoning == "Unable to determine" and 'Recommended Agent:' in response:
+                                                        parts = response.split('Recommended Agent:', 1)
+                                                        if len(parts) > 1:
+                                                            after_agent = parts[1]
+                                                            # Skip the agent line and use the rest
+                                                            agent_lines = after_agent.split('\n')
+                                                            if len(agent_lines) > 1:
+                                                                reasoning = '\n'.join(agent_lines[1:]).strip()
+
+                                                    # Find confidence
+                                                    for line in lines:
+                                                        line = line.strip()
+                                                        if line.startswith('Confidence:'):
+                                                            confidence = line.split(':', 1)[1].strip()
+                                                            break
+
+                                                    # Display results
+                                                    st.success(f"**AI Agent Assignment for {selected_incident_id}:**")
+
+                                                    if recommended_agent.upper() == "UNASSIGNED":
+                                                        st.warning(f"**Recommendation:** Leave Unassigned")
+                                                    else:
+                                                        st.info(f"**Recommended Agent:** {recommended_agent}")
+
+                                                    st.write(f"**Confidence:** {confidence}")
+                                                    st.markdown(f"**Reasoning:**")
+                                                    st.markdown(reasoning)
+
+                                                    # Show assignment details
+                                                    with st.expander("🔍 Assignment Details", expanded=False):
+                                                        st.write(f"**Model:** {model_name}")
+                                                        st.write(f"**Model ID:** {model_id}")
+                                                        st.write(f"**System Prompt:** {system_prompt}")
+                                                        st.write(f"**Incident Title:** {title}")
+                                                        st.write(f"**Incident Description:** {description}")
+                                                        st.write(f"**Category:** {category}")
+                                                        st.write("**Available Agents:**")
+                                                        for agent_line in agent_info:
+                                                            st.write(agent_line)
+                                                else:
+                                                    st.error("❌ No response from AI model")
+                                            except Exception as e:
+                                                st.error(f"❌ Error during agent assignment: {str(e)}")
+                                        else:
+                                            st.warning("⚠️ No model configured. Please go to AI Features page and select a model first.")
+                                    else:
+                                        st.warning("⚠️ No agents data available. Please generate sample agents in the Agents page.")
                             else:
                                 st.error("❌ AI service not available - check AWS credentials")
                         else:
