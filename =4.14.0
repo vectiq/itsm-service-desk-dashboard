@@ -1,0 +1,10 @@
+Collecting pymongo
+  Downloading pymongo-4.14.1-cp311-cp311-macosx_11_0_arm64.whl.metadata (22 kB)
+Collecting dnspython<3.0.0,>=1.16.0 (from pymongo)
+  Using cached dnspython-2.7.0-py3-none-any.whl.metadata (5.8 kB)
+Downloading pymongo-4.14.1-cp311-cp311-macosx_11_0_arm64.whl (859 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 859.7/859.7 kB 9.8 MB/s  0:00:00
+Using cached dnspython-2.7.0-py3-none-any.whl (313 kB)
+Installing collected packages: dnspython, pymongo
+
+Successfully installed dnspython-2.7.0 pymongo-4.14.1

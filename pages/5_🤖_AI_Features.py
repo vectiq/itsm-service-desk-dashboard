@@ -279,7 +279,7 @@ with tab1:
                         result = {"priority": priority, "reasoning": reasoning}
                     else:
                         result = {"priority": "P3", "reasoning": "AI classification failed"}
-                
+
                 st.success(f"**Predicted Priority: {result['priority']}**")
                 st.write(f"**Reasoning:** {result['reasoning']}")
             else:

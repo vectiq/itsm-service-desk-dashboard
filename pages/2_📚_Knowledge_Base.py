@@ -7,18 +7,14 @@ import os
 
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.data_loader import ensure_data_loaded
 from utils.data_ingest import data_ingest_manager
 
 st.set_page_config(page_title="Knowledge Base", page_icon="📚", layout="wide")
 st.title("📚 Knowledge Base")
 
-# Ensure data is loaded
-dfs = ensure_data_loaded()
-
-# Get knowledge base data from MongoDB and CSV
-kb_articles_csv = dfs.get("kb_articles.csv", pd.DataFrame())
-kb_templates = dfs.get("kb_templates.csv", pd.DataFrame())
+# Get knowledge base data from MongoDB only
+kb_articles_csv = pd.DataFrame()  # No longer using CSV data
+kb_templates = pd.DataFrame()  # No longer using CSV data
 
 # Get KB articles from MongoDB (both AI-generated and manually created)
 mongodb_kb_articles = []

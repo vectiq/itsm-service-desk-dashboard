@@ -1,22 +1,21 @@
 """
-Data service for accessing MongoDB data with fallback to CSV
+Data service for accessing MongoDB data
 Provides a unified interface for data access across the application
 """
 import pandas as pd
 import logging
 from typing import Dict, Optional, List
+from datetime import datetime
 import streamlit as st
 from utils.data_ingest import data_ingest_manager
-from utils.data_loader import ensure_data_loaded
 
 logger = logging.getLogger(__name__)
 
 class DataService:
-    """Unified data service with MongoDB primary, CSV fallback"""
-    
+    """MongoDB data service"""
+
     def __init__(self):
         """Initialize data service"""
-        self.csv_data = None
         self._refresh_mongodb_status()
 
     def _refresh_mongodb_status(self):
@@ -32,18 +31,18 @@ class DataService:
                 if self.mongodb_has_data:
                     logger.info(f"MongoDB available with data: {data_exists}")
                 else:
-                    logger.info("MongoDB available but no data found, will use CSV fallback")
-                    self.use_mongodb = False
+                    logger.warning("MongoDB available but no data found")
+                    self.mongodb_has_data = False
             except Exception as e:
                 logger.error(f"Error checking MongoDB data: {str(e)}")
                 self.use_mongodb = False
                 self.mongodb_has_data = False
         else:
-            logger.info("MongoDB not available, using CSV data")
+            logger.error("MongoDB not available")
             self.mongodb_has_data = False
     
     def get_incidents(self, limit: Optional[int] = None) -> pd.DataFrame:
-        """Get incidents data from MongoDB or CSV"""
+        """Get incidents data from MongoDB"""
         try:
             # Refresh MongoDB status to catch newly ingested data
             self._refresh_mongodb_status()
@@ -59,18 +58,18 @@ class DataService:
                     logger.info(f"Loaded {len(df)} incidents from MongoDB")
                     return df
                 else:
-                    logger.warning("No incidents found in MongoDB, falling back to CSV")
+                    logger.warning("No incidents found in MongoDB")
+                    return pd.DataFrame()
 
-            # Fallback to CSV
-            return self._get_csv_incidents(limit)
+            logger.error("MongoDB not available or has no data")
+            return pd.DataFrame()
 
         except Exception as e:
             logger.error(f"Error getting incidents: {str(e)}")
-            # Fallback to CSV on error
-            return self._get_csv_incidents(limit)
+            return pd.DataFrame()
     
     def get_agents(self, limit: Optional[int] = None) -> pd.DataFrame:
-        """Get agents data from MongoDB or CSV"""
+        """Get agents data from MongoDB"""
         try:
             # Refresh MongoDB status
             self._refresh_mongodb_status()
@@ -85,14 +84,15 @@ class DataService:
                     logger.info(f"Loaded {len(df)} agents from MongoDB")
                     return df
                 else:
-                    logger.warning("No agents found in MongoDB, falling back to CSV")
+                    logger.warning("No agents found in MongoDB")
+                    return pd.DataFrame()
 
-            # Fallback to CSV
-            return self._get_csv_agents(limit)
+            logger.error("MongoDB not available or has no data")
+            return pd.DataFrame()
 
         except Exception as e:
             logger.error(f"Error getting agents: {str(e)}")
-            return self._get_csv_agents(limit)
+            return pd.DataFrame()
     
     def get_workload(self, limit: Optional[int] = None) -> pd.DataFrame:
         """Get current workload (unresolved unassigned incidents) from incidents collection"""
@@ -122,74 +122,19 @@ class DataService:
                         df = df.head(limit)
 
                     logger.info(f"Loaded {len(df)} unresolved unassigned incidents from MongoDB")
-
-                    # Enrich with reference data
-                    df = self._enrich_workload_data(df)
                     return df
                 else:
-                    logger.warning("No incidents found in MongoDB, falling back to CSV")
+                    logger.warning("No incidents found in MongoDB")
+                    return pd.DataFrame()
 
-            # Fallback to CSV
-            return self._get_csv_workload(limit)
+            logger.error("MongoDB not available or has no data")
+            return pd.DataFrame()
 
         except Exception as e:
             logger.error(f"Error getting workload: {str(e)}")
-            return self._get_csv_workload(limit)
-    
-    def _get_csv_incidents(self, limit: Optional[int] = None) -> pd.DataFrame:
-        """Get incidents from CSV files"""
-        try:
-            if self.csv_data is None:
-                self.csv_data = ensure_data_loaded()
-            
-            # Get incidents with categories (the cleaned data we show in tables)
-            df = self.csv_data.get("incidents_with_categories.csv", pd.DataFrame())
-            
-            if limit and len(df) > limit:
-                df = df.head(limit)
-            
-            logger.info(f"Loaded {len(df)} incidents from CSV")
-            return df
-            
-        except Exception as e:
-            logger.error(f"Error loading CSV incidents: {str(e)}")
             return pd.DataFrame()
     
-    def _get_csv_agents(self, limit: Optional[int] = None) -> pd.DataFrame:
-        """Get agents from CSV files"""
-        try:
-            if self.csv_data is None:
-                self.csv_data = ensure_data_loaded()
-            
-            df = self.csv_data.get("users_agents.csv", pd.DataFrame())
-            
-            if limit and len(df) > limit:
-                df = df.head(limit)
-            
-            logger.info(f"Loaded {len(df)} agents from CSV")
-            return df
-            
-        except Exception as e:
-            logger.error(f"Error loading CSV agents: {str(e)}")
-            return pd.DataFrame()
-    
-    def _get_csv_workload(self, limit: Optional[int] = None) -> pd.DataFrame:
-        """Get workload from CSV files"""
-        try:
-            if self.csv_data is None:
-                self.csv_data = ensure_data_loaded()
-            
-            df = self.csv_data.get("workload_queue.csv", pd.DataFrame())
-            
-            if limit and len(df) > limit:
-                df = df.head(limit)
-            
-            logger.info(f"Loaded {len(df)} workload items from CSV")
-            return df
-            
-        except Exception as e:
-            logger.error(f"Error loading CSV workload: {str(e)}")
-            return pd.DataFrame()
+
     
     def get_data_source_info(self) -> Dict[str, str]:
         """Get information about current data source"""
@@ -207,11 +152,11 @@ class DataService:
             }
         else:
             return {
-                "source": "CSV Files",
-                "status": "📄 File-based",
-                "incidents_count": "Variable",
-                "agents_count": "Variable",
-                "workload_count": "Variable"
+                "source": "MongoDB",
+                "status": "❌ Not Available",
+                "incidents_count": "0",
+                "agents_count": "0",
+                "workload_count": "0"
             }
     
     def refresh_data_source(self):
@@ -257,19 +202,77 @@ class DataService:
                 )
                 if incident:
                     return incident
-            
-            # Fallback to CSV
-            df = self.get_incidents()
-            if not df.empty and 'incident_id' in df.columns:
-                matches = df[df['incident_id'] == incident_id]
-                if not matches.empty:
-                    return matches.iloc[0].to_dict()
-            
+
+            logger.error("MongoDB not available or has no data")
             return None
-            
+
         except Exception as e:
             logger.error(f"Error getting incident {incident_id}: {str(e)}")
             return None
+
+    def update_incident_priority(self, incident_id: str, priority: str) -> bool:
+        """Update the priority of a specific incident"""
+        try:
+            if self.use_mongodb and self.mongodb_has_data:
+                # Update in MongoDB
+                result = data_ingest_manager.incidents_collection.update_one(
+                    {"incident_id": incident_id},
+                    {
+                        "$set": {
+                            "priority": priority,
+                            "true_priority": priority,  # Update both fields for compatibility
+                            "_updated_at": datetime.utcnow()
+                        }
+                    }
+                )
+
+                if result.modified_count > 0:
+                    logger.info(f"Updated priority for incident {incident_id} to {priority}")
+                    return True
+                else:
+                    logger.warning(f"No incident found with ID {incident_id} for priority update")
+                    return False
+            else:
+                logger.error("MongoDB not available or has no data")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error updating incident priority: {str(e)}")
+            return False
+
+    def update_incident_assignment(self, incident_id: str, assigned_to: str) -> bool:
+        """Update the assigned agent of a specific incident"""
+        try:
+            if self.use_mongodb and self.mongodb_has_data:
+                # Update in MongoDB
+                update_data = {
+                    "assigned_to": assigned_to,
+                    "_updated_at": datetime.utcnow()
+                }
+
+                # If assigning to someone, also update status to 'Assigned' if it's currently 'Open'
+                incident = self.get_incident_by_id(incident_id)
+                if incident and incident.get('status') == 'Open':
+                    update_data["status"] = "Assigned"
+
+                result = data_ingest_manager.incidents_collection.update_one(
+                    {"incident_id": incident_id},
+                    {"$set": update_data}
+                )
+
+                if result.modified_count > 0:
+                    logger.info(f"Updated assignment for incident {incident_id} to {assigned_to}")
+                    return True
+                else:
+                    logger.warning(f"No incident found with ID {incident_id} for assignment update")
+                    return False
+            else:
+                logger.error("MongoDB not available or has no data")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error updating incident assignment: {str(e)}")
+            return False
     
     def get_incidents_by_priority(self, priority: str) -> pd.DataFrame:
         """Get incidents filtered by priority"""
@@ -299,35 +302,8 @@ class DataService:
             logger.error(f"Error filtering incidents by category {category}: {str(e)}")
             return pd.DataFrame()
 
-    def _enrich_workload_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Enrich workload data (unresolved incidents) with reference data lookups"""
-        try:
-            if df.empty:
-                return df
 
-            # Load reference data if not already loaded
-            if self.csv_data is None:
-                self.csv_data = ensure_data_loaded()
 
-            # Enrich with service names
-            if 'service_id' in df.columns and 'services_catalog.csv' in self.csv_data:
-                services_df = self.csv_data['services_catalog.csv']
-                service_lookup = dict(zip(services_df['service_id'], services_df['service_name']))
-                df['service_name'] = df['service_id'].map(service_lookup).fillna('Unknown Service')
-                logger.info(f"Enriched workload with service names for {len(df)} records")
-
-            # Enrich with category names
-            if 'category_id' in df.columns and 'category_tree.csv' in self.csv_data:
-                categories_df = self.csv_data['category_tree.csv']
-                category_lookup = dict(zip(categories_df['category_id'], categories_df['category_name']))
-                df['category_name'] = df['category_id'].map(category_lookup).fillna('Unknown Category')
-                logger.info(f"Enriched workload with category names for {len(df)} records")
-
-            return df
-
-        except Exception as e:
-            logger.error(f"Error enriching workload data: {str(e)}")
-            return df
 
 # Global instance
 data_service = DataService()

@@ -1,6 +1,0 @@
-agent_id,group_id,is_primary,start_date,capacity_weight
-A001,G001,True,2024-01-01,1.0
-A002,G001,True,2024-03-15,1.0
-A003,G002,True,2023-11-02,1.0
-A004,G003,True,2024-05-21,0.6
-A005,G004,True,2022-09-10,1.0

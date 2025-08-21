@@ -1,4 +1,0 @@
-ci_id,name,class,service_id,environment,status
-CI001,VPN Gateway - Sydney,cmdb_ci_netgear,SV002,PROD,In Service
-CI002,Exchange Server - EX01,cmdb_ci_email_server,SV003,PROD,In Service
-CI003,Building B - Wi-Fi AP-23,cmdb_ci_ap,SV002,PROD,In Service

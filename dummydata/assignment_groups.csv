@@ -1,5 +1,0 @@
-group_id,name,service,queue_type,manager_id
-G001,Service Desk,End User Services,Tier 1,A001
-G002,Network Ops,Network Services,Tier 2,A003
-G003,Workplace,End User Services,Tier 2,A004
-G004,Messaging,Collaboration Services,Tier 2,A005

@@ -23,12 +23,12 @@ bedrock_client = BedrockClient()
 data_source_info = data_service.get_data_source_info()
 st.sidebar.info(f"**Data Source**: {data_source_info['source']}\n**Status**: {data_source_info['status']}")
 
-# Load incidents data from MongoDB or CSV
+# Load incidents data from MongoDB
 incidents_df = data_service.get_incidents()
 
 # Check if we have incidents data
 if incidents_df.empty:
-    st.error("No incidents data available. Please check the Data Management page to ingest data.")
+    st.error("No incidents data available. Please check the Data Management page to generate data.")
     st.stop()
 
 # Use the cleaned incidents data directly (already enriched with categories, services, etc.)
@@ -329,6 +329,26 @@ with tab1:
                                                 st.markdown(f"**Reasoning:**")
                                                 st.markdown(reasoning)
 
+                                                # Add apply recommendation button
+                                                current_priority = incident_data.get('true_priority', incident_data.get('priority', 'Unknown'))
+                                                if priority != current_priority:
+                                                    st.write("---")
+                                                    col_apply, col_info = st.columns([1, 2])
+                                                    with col_apply:
+                                                        if st.button(f"✅ Apply Priority {priority}",
+                                                                   key=f"apply_priority_{selected_incident_id}",
+                                                                   type="primary"):
+                                                            success = data_service.update_incident_priority(selected_incident_id, priority)
+                                                            if success:
+                                                                st.success(f"✅ Updated incident {selected_incident_id} priority to {priority}!")
+                                                                st.rerun()
+                                                            else:
+                                                                st.error("❌ Failed to update incident. MongoDB not available.")
+                                                    with col_info:
+                                                        st.info(f"Current priority: {current_priority} → Recommended: {priority}")
+                                                else:
+                                                    st.info(f"✅ Current priority ({current_priority}) matches AI recommendation")
+
                                                 # Show the system prompt used
                                                 with st.expander("🔍 Classification Details", expanded=False):
                                                     st.write(f"**Model:** {model_name}")
@@ -525,6 +545,46 @@ with tab1:
                                                     st.write(f"**Confidence:** {confidence}")
                                                     st.markdown(f"**Reasoning:**")
                                                     st.markdown(reasoning)
+
+                                                    # Add apply recommendation button for agent assignment
+                                                    current_agent = incident_data.get('assigned_to', '')
+                                                    if recommended_agent.upper() != "UNASSIGNED" and recommended_agent != current_agent:
+                                                        st.write("---")
+                                                        col_apply, col_info = st.columns([1, 2])
+                                                        with col_apply:
+                                                            if st.button(f"✅ Assign to {recommended_agent}",
+                                                                       key=f"apply_assignment_{selected_incident_id}",
+                                                                       type="primary"):
+                                                                success = data_service.update_incident_assignment(selected_incident_id, recommended_agent)
+                                                                if success:
+                                                                    st.success(f"✅ Assigned incident {selected_incident_id} to {recommended_agent}!")
+                                                                    st.rerun()
+                                                                else:
+                                                                    st.error("❌ Failed to update incident. MongoDB not available.")
+                                                        with col_info:
+                                                            current_display = current_agent if current_agent else "Unassigned"
+                                                            st.info(f"Current: {current_display} → Recommended: {recommended_agent}")
+                                                    elif recommended_agent.upper() == "UNASSIGNED":
+                                                        if current_agent:
+                                                            st.write("---")
+                                                            col_apply, col_info = st.columns([1, 2])
+                                                            with col_apply:
+                                                                if st.button("✅ Leave Unassigned",
+                                                                           key=f"apply_unassign_{selected_incident_id}",
+                                                                           type="secondary"):
+                                                                    success = data_service.update_incident_assignment(selected_incident_id, "")
+                                                                    if success:
+                                                                        st.success(f"✅ Unassigned incident {selected_incident_id}!")
+                                                                        st.rerun()
+                                                                    else:
+                                                                        st.error("❌ Failed to update incident. MongoDB not available.")
+                                                            with col_info:
+                                                                st.info(f"Current: {current_agent} → Recommended: Unassigned")
+                                                        else:
+                                                            st.info("✅ Incident is already unassigned as recommended")
+                                                    else:
+                                                        current_display = current_agent if current_agent else "Unassigned"
+                                                        st.info(f"✅ Current assignment ({current_display}) matches AI recommendation")
 
                                                     # Show assignment details
                                                     with st.expander("🔍 Assignment Details", expanded=False):

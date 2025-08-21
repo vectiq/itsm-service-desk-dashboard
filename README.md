@@ -41,10 +41,10 @@ A comprehensive ITSM (IT Service Management) dashboard built with Streamlit that
    pip install -r requirements.txt
    ```
 
-3. **Data is included**
-   - Sample ITSM data is included in the `dummydata/` folder
-   - The application automatically loads data from this folder
-   - To use your own data, replace the CSV files in `dummydata/` or update the path in `app.py`
+3. **Set up MongoDB**
+   - Install and start MongoDB locally or use MongoDB Atlas
+   - The application will connect to MongoDB automatically
+   - Generate sample data using the AI-powered data generation feature
 
 4. **Run the application**
    ```bash
@@ -56,33 +56,27 @@ A comprehensive ITSM (IT Service Management) dashboard built with Streamlit that
 
 ## 📁 Data Structure
 
-The application expects the following CSV files:
+The application uses MongoDB collections for data storage:
 
-### Core Files
-- **`incidents_resolved.csv`**: Historical incident data with resolutions
-- **`workload_queue.csv`**: Current open incidents/requests
-- **`kb_articles.csv`**: Knowledge base articles
-- **`kb_templates.csv`**: Knowledge base templates
-- **`services_catalog.csv`**: Service catalog and definitions
-- **`category_tree.csv`**: Incident category hierarchy
+### Core Collections
+- **`incidents`**: All incident data (resolved and unresolved)
+- **`agents`**: Agent information and skills
+- **`kb_articles`**: Knowledge base articles
+- **`settings`**: Application configuration and AI model settings
 
-### Supporting Files
-- **`priority_matrix.csv`**: Priority calculation matrix
-- **`users_agents.csv`**: User and agent information
-- **Additional CSV files**: The application automatically loads all CSV files in the data directory
+### AI-Generated Data
+- **Incident Generation**: Create realistic incidents using AWS Bedrock
+- **Agent Data**: Generate agent profiles with skills and capacity
+- **Knowledge Articles**: AI-generated KB articles from incident patterns
 
 ## 🛠️ Configuration
 
-### Data Directory
-The application uses the included sample data by default:
+### Data Storage
+The application uses MongoDB for data storage:
 
-```python
-HARDCODED_DATA_DIR = os.path.join(os.path.dirname(__file__), "dummydata")
-```
-
-To use your own data, either:
-- Replace the CSV files in the `dummydata/` folder, or
-- Update the path in `app.py` to point to your data directory
+- **MongoDB**: Primary database for all ITSM data
+- **AI Generation**: Use AWS Bedrock to generate realistic incident data
+- **Data Management**: Access the Data Management page to generate and manage data
 
 ### Customization
 - **Styling**: Modify the Streamlit theme in `.streamlit/config.toml`

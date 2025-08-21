@@ -53,8 +53,8 @@ This application demonstrates AI-powered ITSM (IT Service Management) capabiliti
 - Model configuration and testing tools
 
 ### 🗄️ **Data Management**
-- MongoDB data ingestion from CSV files
-- Data source configuration and management
+- MongoDB data management and administration
+- AI-powered incident generation using AWS Bedrock
 - Database administration tools
 
 ---
@@ -62,14 +62,14 @@ This application demonstrates AI-powered ITSM (IT Service Management) capabiliti
 ## Getting Started
 
 1. **Configure AI Settings**: Go to the AI Features page to set up your model preferences
-2. **Load Data**: Visit the Data Management page to ingest CSV data into MongoDB
+2. **Load Data**: Visit the Data Management page to generate AI-powered incident data
 3. **Explore Features**: Navigate through the different pages to explore AI-powered ITSM capabilities
 
 ## Data Sources
 
-The application supports both MongoDB and CSV data sources:
-- **MongoDB**: Primary data source for production use
-- **CSV Files**: Fallback option located in the `dummydata/` directory
+The application uses MongoDB as the primary data source:
+- **MongoDB**: Primary data source for all ITSM data
+- **AI Generation**: Generate realistic incident data using AWS Bedrock
 
 ## AI Integration
 

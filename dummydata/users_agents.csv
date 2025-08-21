@@ -1,6 +1,0 @@
-agent_id,name,email,location,timezone,role,seniority,employment_type
-A001,Alex Chen,alex.chen@example.com,Canberra,Australia/Sydney,Service Desk Analyst,L1,FT
-A002,Priya Singh,priya.singh@example.com,Canberra,Australia/Sydney,Service Desk Analyst,L2,FT
-A003,Sam Williams,sam.williams@example.com,Sydney,Australia/Sydney,Network Engineer,L2,FT
-A004,Taylor Ng,taylor.ng@example.com,Melbourne,Australia/Sydney,Workplace Engineer,L2,PT
-A005,Jordan Lee,jordan.lee@example.com,Perth,Australia/Perth,Messaging Engineer,L3,FT

@@ -74,7 +74,7 @@ class DataIngestManager:
             return {}
     
     def ingest_incidents_data(self, csv_path: str) -> bool:
-        """Ingest incidents data from CSV"""
+        """Ingest incidents data from CSV file into MongoDB"""
         if not self.available:
             return False
         
@@ -110,7 +110,7 @@ class DataIngestManager:
             return False
     
     def ingest_agents_data(self, csv_path: str) -> bool:
-        """Ingest agents data from CSV"""
+        """Ingest agents data from CSV file into MongoDB"""
         if not self.available:
             return False
         
@@ -146,7 +146,7 @@ class DataIngestManager:
             return False
     
     def ingest_workload_data(self, csv_path: str) -> bool:
-        """Ingest workload data from CSV"""
+        """Ingest workload data from CSV file into MongoDB"""
         if not self.available:
             return False
         

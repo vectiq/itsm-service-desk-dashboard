@@ -1,6 +1,0 @@
-agent_id,day_of_week,start_time_local,end_time_local
-A001,Mon-Fri,08:00,16:00
-A002,Mon-Fri,09:00,17:00
-A003,Mon-Fri,07:00,15:00
-A004,Tue-Thu,10:00,16:00
-A005,Mon-Fri,08:00,16:00
