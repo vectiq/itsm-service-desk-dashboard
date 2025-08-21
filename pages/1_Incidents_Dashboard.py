@@ -14,7 +14,7 @@ from utils.bedrock_client import BedrockClient
 from utils.settings_manager import settings_manager
 
 st.set_page_config(page_title="Incidents Dashboard", page_icon="🎫", layout="wide")
-st.title("🎫 Incidents Dashboard")
+st.title("Incidents Dashboard")
 
 # Initialize bedrock client
 bedrock_client = BedrockClient()
@@ -140,7 +140,7 @@ with tab1:
             queue_display_df = queue_display_df.rename(columns=queue_column_renames)
 
             # Add editing mode toggle
-            edit_mode = st.toggle("✏️ Enable Inline Editing", value=False, help="Toggle to edit incidents directly in the table")
+            edit_mode = st.toggle("Enable Inline Editing", value=False, help="Toggle to edit incidents directly in the table")
 
             if edit_mode:
                 # Display the table with inline editing
@@ -266,10 +266,10 @@ with tab1:
                         delete_clicked = st.button("🗑️ Delete", key=f"queue_delete_{selected_incident_id}", use_container_width=True)
 
                     with btn_col4:
-                        classify_clicked = st.button("🎯 Auto-Classify", key=f"queue_classify_{selected_incident_id}", use_container_width=True)
+                        classify_clicked = st.button("Auto-Classify", key=f"queue_classify_{selected_incident_id}", use_container_width=True)
 
                     with btn_col5:
-                        assign_clicked = st.button("👥 Auto-Assign", key=f"queue_assign_{selected_incident_id}", use_container_width=True)
+                        assign_clicked = st.button("Auto-Assign", key=f"queue_assign_{selected_incident_id}", use_container_width=True)
 
                     # Handle button clicks
                     if view_clicked:
@@ -417,7 +417,7 @@ with tab1:
                                                     st.write("---")
                                                     col_apply, col_info = st.columns([1, 2])
                                                     with col_apply:
-                                                        if st.button(f"✅ Apply Priority {priority}",
+                                                        if st.button(f"Apply Priority {priority}",
                                                                    key=f"apply_priority_{selected_incident_id}",
                                                                    type="primary"):
                                                             success = data_service.update_incident_priority(selected_incident_id, priority)
@@ -634,7 +634,7 @@ with tab1:
                                                         st.write("---")
                                                         col_apply, col_info = st.columns([1, 2])
                                                         with col_apply:
-                                                            if st.button(f"✅ Assign to {recommended_agent}",
+                                                            if st.button(f"Assign to {recommended_agent}",
                                                                        key=f"apply_assignment_{selected_incident_id}",
                                                                        type="primary"):
                                                                 success = data_service.update_incident_assignment(selected_incident_id, recommended_agent)
@@ -651,7 +651,7 @@ with tab1:
                                                             st.write("---")
                                                             col_apply, col_info = st.columns([1, 2])
                                                             with col_apply:
-                                                                if st.button("✅ Leave Unassigned",
+                                                                if st.button("Leave Unassigned",
                                                                            key=f"apply_unassign_{selected_incident_id}",
                                                                            type="secondary"):
                                                                     success = data_service.update_incident_assignment(selected_incident_id, "")

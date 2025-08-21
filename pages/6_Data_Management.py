@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_ingest import data_ingest_manager
 
 st.set_page_config(page_title="Data Management", page_icon="🗄️", layout="wide")
-st.title("🗄️ Data Management")
+st.title("Data Management")
 
 # Check MongoDB availability
 if not data_ingest_manager.is_available():
@@ -23,17 +23,17 @@ if not data_ingest_manager.is_available():
 # Get current data status for internal use
 data_exists = data_ingest_manager.check_data_exists()
 data_stats = data_ingest_manager.get_data_stats()
-st.header("🤖 AI Data Generation")
+st.header("AI Data Generation")
 st.write("Generate realistic ITSM data using AWS Bedrock AI")
 
 # Check if Bedrock is available
 from utils.bedrock_client import bedrock_client
 
 if bedrock_client.is_available():
-    st.success("✅ AWS Bedrock AI is connected")
+    st.success("AWS Bedrock AI is connected")
 
     # AI Incident Generation
-    st.subheader("🎫 Generate AI Incidents")
+    st.subheader("Generate AI Incidents")
 
     # Dedicated model settings for data generation
     st.write("**Model Configuration for Data Generation:**")
@@ -98,7 +98,7 @@ if bedrock_client.is_available():
     # Debug console toggle
     show_debug = st.checkbox("🔍 Show Debug Console", help="Show detailed error messages and logs")
 
-    if st.button("🤖 Generate AI Incidents", type="primary"):
+    if st.button("Generate AI Incidents", type="primary"):
         debug_container = st.container()
 
         with st.spinner("Generating AI-powered incidents... This may take a few minutes."):
@@ -167,10 +167,10 @@ if bedrock_client.is_available():
     st.divider()
 
     # Agent Generation (existing functionality)
-    st.subheader("👥 Generate Sample Agents")
+    st.subheader("Generate Sample Agents")
     st.write("Generate agents with skills for workload assignment")
 
-    if st.button("🎲 Generate Sample Agents"):
+    if st.button("Generate Sample Agents"):
         # This will use the existing agent generation from the Agents page
         st.info("Use the Agents page to generate sample agents with skills")
 
@@ -182,9 +182,9 @@ else:
     st.code("AWS_REGION=us-east-1  # optional, defaults to us-east-1")
 
 # Data preview section
-st.header("👀 Data Preview")
+st.header("Data Preview")
 
-preview_tabs = st.tabs(["🎫 Incidents", "👥 Agents", "📋 Workload"])
+preview_tabs = st.tabs(["Incidents", "Agents", "Workload"])
 
 with preview_tabs[0]:
     if data_exists.get("incidents", False):
@@ -266,15 +266,15 @@ with preview_tabs[2]:
 
 
 # Database management section
-st.header("🛠️ Database Management")
+st.header("Database Management")
 
 danger_col1, danger_col2 = st.columns(2)
 
 with danger_col1:
-    st.subheader("⚠️ Danger Zone")
+    st.subheader("Danger Zone")
 
     # Cleanup duplicates button
-    if st.button("🧹 Clean Up Duplicate Incidents", type="secondary"):
+    if st.button("Clean Up Duplicate Incidents", type="secondary"):
         with st.spinner("Cleaning up duplicate incidents..."):
             success = data_ingest_manager.cleanup_duplicate_incidents()
             if success:
@@ -283,7 +283,7 @@ with danger_col1:
             else:
                 st.error("❌ Failed to clean up duplicates")
 
-    if st.button("🗑️ Clear All Data", type="secondary"):
+    if st.button("Clear All Data", type="secondary"):
         if st.checkbox("I understand this will delete all data"):
             with st.spinner("Clearing all data..."):
                 try:
@@ -297,7 +297,7 @@ with danger_col1:
                     st.error(f"❌ Error clearing data: {str(e)}")
 
 with danger_col2:
-    st.subheader("📊 Database Info")
+    st.subheader("Database Info")
     try:
         # Get database stats
         db_stats = data_ingest_manager.db.command("dbstats")

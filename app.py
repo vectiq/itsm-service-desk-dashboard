@@ -11,12 +11,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 st.set_page_config(
     page_title="ITSM AI Demo",
-    page_icon="🎫",
+    page_icon="📋",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🎫 ITSM AI Demo Application")
+st.title("ITSM AI Demo Application")
 st.markdown("---")
 
 # Welcome message

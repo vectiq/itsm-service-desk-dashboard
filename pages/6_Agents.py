@@ -16,7 +16,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("👥 Agents Management")
+st.title("Agents Management")
 
 # Check data source
 data_source = "MongoDB" if data_service.use_mongodb and data_service.mongodb_has_data else "CSV"

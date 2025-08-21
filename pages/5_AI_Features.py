@@ -12,7 +12,7 @@ from utils.settings_manager import settings_manager
 from utils.data_ingest import data_ingest_manager
 
 st.set_page_config(page_title="AI Features", page_icon="🤖", layout="wide")
-st.title("🤖 AI-Powered ITSM Features")
+st.title("AI-Powered ITSM Features")
 
 # Show data source info
 data_source_info = data_service.get_data_source_info()

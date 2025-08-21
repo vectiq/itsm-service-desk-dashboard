@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.data_ingest import data_ingest_manager
 
 st.set_page_config(page_title="Knowledge Base", page_icon="📚", layout="wide")
-st.title("📚 Knowledge Base")
+st.title("Knowledge Base")
 
 # Get knowledge base data from MongoDB only
 kb_articles_csv = pd.DataFrame()  # No longer using CSV data
