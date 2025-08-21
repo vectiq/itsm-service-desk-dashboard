@@ -386,20 +386,24 @@ class DataIngestManager:
             unresolved_count = count - resolved_count
 
             all_incidents = []
+            incident_counter = 1  # Simple counter for IDs
 
             # Generate resolved incidents
             if resolved_count > 0:
                 resolved_incidents = self._generate_ai_incidents_batch(
                     bedrock_client, resolved_count, status_type='resolved',
-                    model_id=model_id, max_tokens=max_tokens, temperature=temperature
+                    model_id=model_id, max_tokens=max_tokens, temperature=temperature,
+                    start_id=incident_counter
                 )
                 all_incidents.extend(resolved_incidents)
+                incident_counter += resolved_count
 
             # Generate unresolved incidents
             if unresolved_count > 0:
                 unresolved_incidents = self._generate_ai_incidents_batch(
                     bedrock_client, unresolved_count, status_type='unresolved',
-                    model_id=model_id, max_tokens=max_tokens, temperature=temperature
+                    model_id=model_id, max_tokens=max_tokens, temperature=temperature,
+                    start_id=incident_counter
                 )
                 all_incidents.extend(unresolved_incidents)
 
@@ -428,9 +432,10 @@ class DataIngestManager:
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return False
 
-    def _generate_ai_incidents_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None) -> List[Dict]:
+    def _generate_ai_incidents_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None, start_id: int = 1) -> List[Dict]:
         """Generate a batch of incidents using AI"""
         incidents = []
+        current_id = start_id
 
         # Generate incidents in smaller batches to avoid token limits
         batch_size = 10
@@ -445,9 +450,11 @@ class DataIngestManager:
             try:
                 batch_incidents = self._generate_ai_batch(
                     bedrock_client, batch_count, status_type,
-                    model_id=model_id, max_tokens=max_tokens, temperature=temperature
+                    model_id=model_id, max_tokens=max_tokens, temperature=temperature,
+                    start_id=current_id
                 )
                 incidents.extend(batch_incidents)
+                current_id += len(batch_incidents)  # Update counter
                 logger.info(f"Generated batch {batch_num + 1}/{batches} ({len(batch_incidents)} incidents)")
 
             except Exception as e:
@@ -458,7 +465,7 @@ class DataIngestManager:
 
         return incidents
 
-    def _generate_ai_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None) -> List[Dict]:
+    def _generate_ai_batch(self, bedrock_client, count: int, status_type: str, model_id: str = None, max_tokens: int = None, temperature: float = None, start_id: int = 1) -> List[Dict]:
         """Generate a single batch of incidents using AI"""
 
         # Use provided model settings or fallback to defaults
@@ -575,7 +582,8 @@ IMPORTANT: Return ONLY a JSON array with exactly {count} incident objects. Do no
                 # Process and validate each incident
                 processed_incidents = []
                 for i, incident in enumerate(incidents_data):
-                    processed_incident = self._process_ai_incident(incident, i, status_type)
+                    incident_id = f"INC{start_id + i:04d}"  # Simple sequential ID
+                    processed_incident = self._process_ai_incident(incident, incident_id, status_type)
                     if processed_incident:
                         processed_incidents.append(processed_incident)
                     else:
@@ -596,16 +604,10 @@ IMPORTANT: Return ONLY a JSON array with exactly {count} incident objects. Do no
             logger.error(error_msg)
             raise Exception(error_msg)
 
-    def _process_ai_incident(self, incident_data: Dict, index: int, status_type: str) -> Optional[Dict]:
+    def _process_ai_incident(self, incident_data: Dict, incident_id: str, status_type: str) -> Optional[Dict]:
         """Process and validate a single AI-generated incident"""
         try:
-            # Generate unique incident ID if not provided or invalid
-            base_id = 1000 + (int(datetime.utcnow().timestamp()) % 10000) + index
-            incident_id = incident_data.get('incident_id', f'INC{base_id:04d}')
-
-            # Ensure incident_id format
-            if not incident_id.startswith('INC'):
-                incident_id = f'INC{base_id:04d}'
+            # Use the provided incident_id directly - no more stupid generation logic!
 
             # Build the incident record with readable field names
             record = {
@@ -660,6 +662,54 @@ IMPORTANT: Return ONLY a JSON array with exactly {count} incident objects. Do no
         except Exception as e:
             logger.error(f"Error processing AI incident: {str(e)}")
             return None
+
+    def cleanup_duplicate_incidents(self) -> bool:
+        """Remove duplicate incidents, keeping only the most recent version of each incident_id"""
+        if not self.available:
+            return False
+
+        try:
+            logger.info("Starting cleanup of duplicate incidents...")
+
+            # Find all incident_ids that have duplicates
+            pipeline = [
+                {"$group": {
+                    "_id": "$incident_id",
+                    "count": {"$sum": 1},
+                    "docs": {"$push": {"_id": "$_id", "created": "$_ingested_at"}}
+                }},
+                {"$match": {"count": {"$gt": 1}}}
+            ]
+
+            duplicates = list(self.incidents_collection.aggregate(pipeline))
+
+            if not duplicates:
+                logger.info("No duplicate incidents found")
+                return True
+
+            total_removed = 0
+            for duplicate_group in duplicates:
+                incident_id = duplicate_group["_id"]
+                docs = duplicate_group["docs"]
+
+                # Sort by creation date (most recent first)
+                docs.sort(key=lambda x: x.get("created", datetime.min), reverse=True)
+
+                # Keep the first (most recent) and remove the rest
+                docs_to_remove = docs[1:]  # Skip the first (most recent)
+
+                for doc in docs_to_remove:
+                    self.incidents_collection.delete_one({"_id": doc["_id"]})
+                    total_removed += 1
+
+                logger.info(f"Cleaned up {len(docs_to_remove)} duplicates for incident {incident_id}")
+
+            logger.info(f"Cleanup complete. Removed {total_removed} duplicate incidents")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error during duplicate cleanup: {str(e)}")
+            return False
 
 # Global instance
 data_ingest_manager = DataIngestManager()

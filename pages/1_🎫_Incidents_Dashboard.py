@@ -139,15 +139,97 @@ with tab1:
 
             queue_display_df = queue_display_df.rename(columns=queue_column_renames)
 
-            # Display the table with row selection
-            queue_event = st.dataframe(
-                queue_display_df,
-                use_container_width=True,
-                hide_index=True,
-                height=400,
-                on_select="rerun",
-                selection_mode="single-row"
-            )
+            # Add editing mode toggle
+            edit_mode = st.toggle("✏️ Enable Inline Editing", value=False, help="Toggle to edit incidents directly in the table")
+
+            if edit_mode:
+                # Display the table with inline editing
+                edited_df = st.data_editor(
+                    queue_display_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=400,
+                    key="queue_editor",
+                    column_config={
+                        "Priority": st.column_config.SelectboxColumn(
+                            "Priority",
+                            options=["P1", "P2", "P3", "P4"],
+                            help="Select incident priority"
+                        ),
+                        "Assigned To": st.column_config.SelectboxColumn(
+                            "Assigned To",
+                            options=[""] + (data_service.get_agents()['agent_id'].tolist() if not data_service.get_agents().empty else []),
+                            help="Select assigned agent"
+                        ),
+                        "Status": st.column_config.SelectboxColumn(
+                            "Status",
+                            options=["Open", "Assigned", "In Progress", "Resolved", "Closed"],
+                            help="Select incident status"
+                        )
+                    },
+                    disabled=["Incident ID", "Title", "Category", "Created", "Description"]  # Make these read-only
+                )
+
+                # Handle inline edits - detect changes and update database
+                if not edited_df.equals(queue_display_df):
+                    # Find changed rows by comparing dataframes
+                    changes_made = False
+                    try:
+                        for idx in range(len(edited_df)):
+                            if idx < len(queue_display_df):
+                                old_row = queue_display_df.iloc[idx]
+                                new_row = edited_df.iloc[idx]
+
+                                # Get incident ID
+                                incident_id = new_row['Incident ID']
+
+                                # Check priority changes
+                                old_priority = old_row.get('Priority', None)
+                                new_priority = new_row.get('Priority', None)
+                                if old_priority != new_priority and new_priority:
+                                    success = data_service.update_incident_priority(incident_id, new_priority)
+                                    if success:
+                                        st.success(f"✅ Updated {incident_id} priority to {new_priority}")
+                                        changes_made = True
+                                    else:
+                                        st.error(f"❌ Failed to update {incident_id} priority")
+
+                                # Check assignment changes
+                                old_assigned = old_row.get('Assigned To', None)
+                                new_assigned = new_row.get('Assigned To', None)
+                                if old_assigned != new_assigned:
+                                    new_assigned = new_assigned or ""
+                                    success = data_service.update_incident_assignment(incident_id, new_assigned)
+                                    if success:
+                                        assigned_display = new_assigned if new_assigned else "Unassigned"
+                                        st.success(f"✅ Updated {incident_id} assignment to {assigned_display}")
+                                        changes_made = True
+                                    else:
+                                        st.error(f"❌ Failed to update {incident_id} assignment")
+
+                    except Exception as e:
+                        st.error(f"Error processing edits: {str(e)}")
+
+                    if changes_made:
+                        st.rerun()
+
+                # Create a dummy event object for compatibility with existing selection code
+                class DummyEvent:
+                    def __init__(self):
+                        self.selection = type('obj', (object,), {'rows': []})()
+
+                queue_event = DummyEvent()
+
+            else:
+                # Display the table with row selection (original functionality)
+                queue_event = st.dataframe(
+                    queue_display_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=400,
+                    on_select="rerun",
+                    selection_mode="single-row"
+                )
 
             # Actions section for Current Queue
             st.write("**Actions:**")

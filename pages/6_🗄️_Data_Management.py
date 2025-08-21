@@ -272,7 +272,17 @@ danger_col1, danger_col2 = st.columns(2)
 
 with danger_col1:
     st.subheader("⚠️ Danger Zone")
-    
+
+    # Cleanup duplicates button
+    if st.button("🧹 Clean Up Duplicate Incidents", type="secondary"):
+        with st.spinner("Cleaning up duplicate incidents..."):
+            success = data_ingest_manager.cleanup_duplicate_incidents()
+            if success:
+                st.success("✅ Duplicate incidents cleaned up successfully!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to clean up duplicates")
+
     if st.button("🗑️ Clear All Data", type="secondary"):
         if st.checkbox("I understand this will delete all data"):
             with st.spinner("Clearing all data..."):
